@@ -160,7 +160,7 @@ def hires_image(url, box, bg):
     if data is None:
         warnings.append('imagen no encontrada localmente: %s' % url[:120])
         return url
-    target = int(max(256, 4 * max(box[2], box[3])))
+    target = int(min(4000, max(256, 4 * max(box[2], box[3]))))
     try:
         if kind == 'svg' or data.lstrip()[:5] in (b'<?xml', b'<svg ') or b'<svg' in data[:300]:
             key = '%s_%d' % (hashlib.sha1(data).hexdigest()[:16], target)
@@ -250,7 +250,7 @@ def emit_text_block(lines, box, align='center', valign='top', extra='', bg=None)
 # containers: body colours for "what is behind an image"
 bodies = []   # (box, colour)
 label_boxes = []   # (owner_box, label_box)
-image_boxes = [o['b'] for o in dump if not o['edge'] and ('image' in st(o['style']) or st(o['style']).get('shape') == 'image')]
+image_boxes = [o['b'] for o in dump if not o['edge'] and (o.get('raster') or 'image' in st(o['style']) or st(o['style']).get('shape') == 'image')]
 
 edges = []
 for o in dump:
@@ -294,10 +294,15 @@ for o in dump:
         continue
 
     # ---- plain text cells
-    if 'text' in d and not d.get('shape'):
+    if 'text' in d and not d.get('shape') and not o.get('raster'):
         emit_text_block(lines, b, d.get('align', 'center'), d.get('verticalAlign', 'middle'))
         continue
 
+    if o.get('raster'):                 # stencil or pasted picture drawn by draw.io
+        d = {k: v for k, v in d.items() if k not in ('shape', 'fillColor', 'strokeColor', 'gradientColor')}
+        d['image'] = o['raster']
+        if o.get('rkind') == 'img':
+            lines = []
     is_image = 'image' in d or d.get('shape') == 'image'
     tb = o.get('tb')
     outside = bool(tb) and not inside(tb, b)

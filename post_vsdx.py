@@ -110,6 +110,9 @@ for sh, m in zip(shapes, meta):
     else:
         px, py, w, h, lx, ly = (cell(sh, k) for k in ('PinX', 'PinY', 'Width', 'Height', 'LocPinX', 'LocPinY'))
         xs += [px - lx, px - lx + w]; ys += [py - ly, py - ly + h]
+if not xs:   # pestaña vacía: página en blanco del tamaño elegido
+    xs, ys = [0.0], [0.0]
+    print('AVISO: la pestaña no tiene formas exportables; página vacía')
 minx, maxx, miny, maxy = min(xs), max(xs), min(ys), max(ys)
 cw, ch = maxx - minx, maxy - miny
 
@@ -172,7 +175,7 @@ def setf(sh, name, v, f=None):
     new = '<Cell N="%s" V="%r"%s/>' % (name, v, (' F="%s"' % f) if f else '')
     return re.sub(pat, new, sh, count=1) if re.search(pat, sh) else sh
 
-next_id = max(int(i) for i in re.findall(r'<Shape ID="(\d+)"', page)) + 1
+next_id = max([int(i) for i in re.findall(r'<Shape ID="(\d+)"', page)] + [0]) + 1
 members = {}
 for i, m in enumerate(meta):
     if m.get('group') and not a.no_group:
@@ -215,8 +218,9 @@ for i, sh in enumerate(out):
                  '<Shapes>%s</Shapes></Shape>'
                  % (gidn, gidn, gidn, gx0 + gw / 2, gy0 + gh / 2, gw, gh, gw / 2, gh / 2, ''.join(rel)))
 
-start = page.index(shapes[0]); end = page.rindex(shapes[-1]) + len(shapes[-1])
-page = page[:start] + ''.join(final) + page[end:]
+if shapes:
+    start = page.index(shapes[0]); end = page.rindex(shapes[-1]) + len(shapes[-1])
+    page = page[:start] + ''.join(final) + page[end:]
 pages = re.sub(r'<Cell N="PageWidth" V="[^"]*"/>', '<Cell N="PageWidth" V="%r"/>' % PW, pages)
 pages = re.sub(r'<Cell N="PageHeight" V="[^"]*"/>', '<Cell N="PageHeight" V="%r"/>' % PH, pages)
 

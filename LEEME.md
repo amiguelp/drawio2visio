@@ -17,8 +17,8 @@ de forma que en Visio:
 2. **Node.js LTS** — <https://nodejs.org>.
 3. **Microsoft Edge o Google Chrome** instalado (en Windows, Edge ya viene).
 
-La primera ejecución descarga de npm la app de draw.io y su exportador
-(~200 MB, a `%USERPROFILE%\.cache\drawio-vsdx`). Después ya no hace falta
+La primera ejecución descarga de npm la app de draw.io, su exportador y las
+librerías de iconos actuales (~210 MB, a `%USERPROFILE%\.cache\drawio-vsdx`). Después ya no hace falta
 conexión.
 
 > **Proxy corporativo**: si `npm install` falla, configura el proxy:
@@ -68,6 +68,8 @@ prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
 | Visio re-enruta las flechas | Flechas con los puntos exactos de draw.io y `ConFixedCode=2` |
 | Cabeceras de contenedores perdidas, hijos descolocados | Contenedor = cuerpo + cabecera en coordenadas absolutas |
 | Iconos SVG minúsculos y borrosos | Rasterizado a ≥256 px |
+| Iconos de librerías (Cisco, AWS, Citrix, redes, P&ID…) convertidos en cuadrados de color | draw.io dibuja cada icono y se inserta como imagen en alta resolución (su nombre sigue siendo texto editable). Se añaden las librerías de stencils actuales de draw.io |
+| Imágenes pegadas dentro de un texto (p. ej. un diagrama pegado como imagen) | Se insertan como imagen; antes la pestaña quedaba vacía y daba error |
 
 ## A tener en cuenta
 
@@ -78,6 +80,11 @@ prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
   ```json
   {"PowerBI.svg": "C:/iconos/power-bi.png"}
   ```
+- Si un icono sale como rectángulo de color, comprueba cómo se ve en draw.io:
+  los diagramas generados por IA a veces usan nombres de iconos que no existen
+  (`mxgraph.pid.misc.plc`, por ejemplo) y draw.io también los pinta como
+  rectángulos.
+- Pestañas sin nada exportable salen como página en blanco con un aviso.
 - *El contenido no cabe en A4*: prueba `--page A3` o `--orientation landscape`.
 - Si no encuentra Edge/Chrome, indica la ruta:
   `set DRAWIO_BROWSER=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`

@@ -13,6 +13,7 @@
 // Env: DRAWIO_VSDX_HOME (default ~/.cache/drawio-vsdx), set up by setup_env.sh
 import http from 'http';
 import fs from 'fs';
+import crypto from 'crypto';
 import path from 'path';
 import os from 'os';
 import { createRequire } from 'module';
@@ -149,6 +150,32 @@ if (mode === 'dump') {
             const bb = st.text.boundingBox; const [x, y] = abs(bb.x, bb.y);
             o.tb = [x, y, bb.width / s, bb.height / s];
           }
+          // Elements the Visio exporter cannot draw: draw.io renders them and they go in as images
+          if (!c.edge) {
+            const shp = (st.style && st.style.shape) || '';
+            const html = (typeof o.value === 'string') ? o.value : '';
+            const im = html.match(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/i);
+            if (im && html.replace(/<img\b[^>]*>/gi, '').replace(/<[^>]+>/g, '').trim() === '') {
+              const wa = html.match(/\bwidth=["']?(\d+)/i), ha = html.match(/\bheight=["']?(\d+)/i);
+              o.rkind = 'img'; o.rsrc = im[1];
+              o.rsize = [wa ? +wa[1] : o.b[2], ha ? +ha[1] : o.b[3]];
+            } else if (shp.indexOf('mxgraph.') === 0 && o.b[2] <= 400 && o.b[3] <= 400) {
+              try {
+                const div = document.createElement('div');
+                div.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;height:1px;overflow:hidden';
+                document.body.appendChild(div);
+                const tg = new Graph(div);
+                tg.setStylesheet(g.getStylesheet());
+                const cl = c.clone(); cl.value = ''; cl.geometry = new mxGeometry(0, 0, o.b[2], o.b[3]);
+                cl.style = (cl.style || '').replace(/(^|;)rotation=[^;]*/g, '$1');
+                tg.model.beginUpdate(); try { tg.addCell(cl); } finally { tg.model.endUpdate(); }
+                const svg = tg.getSvg(null, 1, 1);
+                o.rkind = 'stencil'; o.rsrc = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(mxUtils.getXml(svg))));
+                o.rsize = [o.b[2] + 2, o.b[3] + 2];
+                tg.destroy(); div.remove();
+              } catch (e) { o.rerr = String(e).slice(0, 120); }
+            }
+          }
           res.push(o);
         }
         walk(c);
@@ -157,8 +184,40 @@ if (mode === 'dump') {
     walk(m.root);
     return res;
   });
+  // capture each element with the browser (screenshot: no canvas tainting, foreignObject text works)
+  const RDIR = path.join(WEB, '_hires', 'raster');
+  fs.mkdirSync(RDIR, { recursive: true });
+  const shot = await browser.newPage();
+  let nr = 0;
+  for (const o of out) {
+    if (o.rerr) console.log('AVISO: no se pudo dibujar la forma', o.id, o.rerr);
+    if (!o.rkind) continue;
+    const src = o.rsrc; delete o.rsrc;
+    const [nw, nh] = o.rsize;
+    const k = o.rkind === 'img' ? Math.min(2, 4000 / Math.max(nw, nh)) : Math.max(4, 256 / Math.max(1, Math.min(nw, nh)));
+    const W = Math.max(1, Math.round(nw * k)), H = Math.max(1, Math.round(nh * k));
+    if (!/^data:/i.test(src) && !src.startsWith('/') && !/^https?:\/\/127\.0\.0\.1/.test(src)) {
+      console.log('AVISO: imagen externa no accesible sin conexión:', src.slice(0, 100));
+      delete o.rkind; continue;
+    }
+    try {
+      await shot.setViewportSize({ width: Math.min(W, 8000), height: Math.min(H, 8000) });
+      await shot.setContent(`<html><body style="margin:0;background:transparent"><img id="i" style="display:block;width:${W}px;height:${H}px"></body></html>`);
+      await shot.evaluate(async (src) => { const i = document.getElementById('i'); await new Promise((ok) => { i.onload = ok; i.onerror = ok; i.src = src; }); }, src);
+      const name = 'r_' + crypto.createHash('sha1').update(src + W).digest('hex').slice(0, 16) + '.png';
+      await shot.locator('#i').screenshot({ path: path.join(RDIR, name), omitBackground: true });
+      o.raster = '__WEBROOT__/_hires/raster/' + name;
+      if (o.rkind === 'img') {   // the picture overflows the text cell: use its real extent
+        const bx = o.tb || o.b;
+        o.b = [bx[0] + (bx[2] - nw) / 2, bx[1] + (bx[3] - nh) / 2, nw, nh];
+        delete o.tb;
+      }
+      nr++;
+    } catch (e) { console.log('AVISO: no se pudo rasterizar', o.id, String(e).slice(0, 100)); delete o.rkind; }
+  }
+  await shot.close();
   fs.writeFileSync(outFile, JSON.stringify(out, null, 1));
-  console.log('dumped', out.length, 'cells');
+  console.log('dumped', out.length, 'cells,', nr, 'rendered as image');
 } else {
   const res = await page.evaluate(async () => {
     const ui = window.theUi;

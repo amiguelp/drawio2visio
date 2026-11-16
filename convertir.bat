@@ -2,7 +2,7 @@
 rem ------------------------------------------------------------------
 rem  draw.io -> Visio  (arrastra uno o varios .drawio o carpetas encima)
 rem  Uso en consola:  convertir.bat diagrama.drawio [opciones]
-rem  Opciones: --page A3 --orientation landscape --preview --no-group ...
+rem  Opciones: --page A3 --orientation landscape --preview --split --no-group ...
 rem ------------------------------------------------------------------
 setlocal
 chcp 65001 >nul

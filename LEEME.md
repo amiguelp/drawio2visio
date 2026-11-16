@@ -41,8 +41,10 @@ convertir.bat C:\diagramas                       (todos los .drawio de la carpet
 python convert.py arquitectura.drawio salida.vsdx --page-index 1
 ```
 
-Si el diagrama tiene varias pestañas, se genera un `.vsdx` por pestaña
-(`arquitectura_NombrePestaña.vsdx`).
+Si el diagrama tiene varias pestañas, se genera **un único `.vsdx` con una
+página de Visio por pestaña**, con el mismo nombre y orden que en draw.io. Si
+prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
+`--split`.
 
 | Opción | Para qué |
 |---|---|
@@ -50,6 +52,7 @@ Si el diagrama tiene varias pestañas, se genera un `.vsdx` por pestaña
 | `--orientation auto\|portrait\|landscape` | `auto` elige según la forma del diagrama |
 | `--font "Segoe UI"` | Fuente de destino |
 | `--page-index N` | Solo esa pestaña (0 = la primera) |
+| `--split` | Un `.vsdx` por pestaña en vez de uno con todas |
 | `--no-group` | No agrupar icono+nombre ni contenedor+cabecera |
 | `--image-map map.json` | Sustituir iconos que no se encuentran (ver abajo) |
 | `--preview` | PNG de comprobación (requiere LibreOffice) |
@@ -91,3 +94,4 @@ Si el diagrama tiene varias pestañas, se genera un `.vsdx` por pestaña
 | `drawio_headless.mjs` | Abre draw.io en el navegador sin interfaz: mide, rasteriza y exporta |
 | `flatten_for_visio.py` | Crea la copia «plana» del diagrama pensada para Visio |
 | `post_vsdx.py` | Corrige el .vsdx: textos, tamaños, fórmulas, grupos, conectores y página |
+| `merge_vsdx.py` | Une las páginas en un único .vsdx (también se puede usar suelto) |

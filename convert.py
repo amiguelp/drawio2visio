@@ -11,12 +11,13 @@ Opciones:
   --font "Segoe UI"                fuente de destino (instalada en todo Windows)
   --image-map map.json             sustituir iconos que no se encuentran
   --page-index N                   exportar solo esa página (0 = la primera)
+  --split                          un .vsdx por pestaña en vez de uno con todas
   --no-group                       no agrupar icono+nombre ni contenedor+cabecera
   --preview                        genera un PNG de comprobación (requiere LibreOffice)
   --workdir DIR                    conservar ficheros intermedios
 
-Cada página del .drawio sale en su propio .vsdx (nombre_Página.vsdx) cuando
-el diagrama tiene varias.
+Si el .drawio tiene varias pestañas, se genera UN solo .vsdx con una página de
+Visio por pestaña (con el mismo nombre). Con --split, un .vsdx por pestaña.
 
 Pasos (cada uno es un script independiente):
   1. setup_env.py           herramientas desde npm/PyPI (caché en ~/.cache/drawio-vsdx)
@@ -27,7 +28,7 @@ Pasos (cada uno es un script independiente):
   5. post_vsdx              ajusta textos, conectores, imágenes y página
   6. vista previa opcional  LibreOffice -> PNG
 """
-import argparse, glob, os, re, shutil, subprocess, sys, tempfile
+import argparse, glob, html, os, re, shutil, subprocess, sys, tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WIN = os.name == 'nt'
@@ -41,6 +42,7 @@ ap.add_argument('--font', default='Segoe UI')
 ap.add_argument('--image-map', default=None)
 ap.add_argument('--page-index', default=None, type=int)
 ap.add_argument('--preview', action='store_true')
+ap.add_argument('--split', action='store_true', help='un .vsdx por pestaña')
 ap.add_argument('--no-group', action='store_true', help='no agrupar icono+nombre ni contenedor+cabecera')
 ap.add_argument('--workdir', default=None)
 ap.add_argument('--verbose', '-v', action='store_true')
@@ -72,7 +74,7 @@ def page_names(path):
         txt = open(path, encoding='utf-8', errors='replace').read()
     except OSError:
         return ['']
-    names = re.findall(r'<diagram\b[^>]*?\bname="([^"]*)"', txt)
+    names = [html.unescape(n) for n in re.findall(r'<diagram\b[^>]*?\bname="([^"]*)"', txt)]
     n = len(re.findall(r'<diagram\b', txt))
     if n <= 1:
         return ['']
@@ -91,7 +93,7 @@ NODE = shutil.which('node') or 'node'
 HEADLESS = os.path.join(HERE, 'drawio_headless.mjs')
 
 
-def convert_page(src, dst, page_index, wd):
+def convert_page(src, dst, page_index, wd, prev_name=None):
     os.makedirs(wd, exist_ok=True)
     dump, flat, raw = (os.path.join(wd, n) for n in ('dump.json', 'flat.drawio', 'raw.vsdx'))
     run([NODE, HEADLESS, 'dump', os.path.abspath(src), dump, '--page', str(page_index)], quiet=True)
@@ -111,7 +113,7 @@ def convert_page(src, dst, page_index, wd):
     run([sys.executable, os.path.join(HERE, 'post_vsdx.py'), raw, flat + '.meta.json', os.path.abspath(dst),
          '--page', a.page, '--orientation', a.orientation] + (['--no-group'] if a.no_group else []))
     if a.preview:
-        preview(dst, wd)
+        preview(dst, wd, prev_name)
 
 
 def find_soffice():
@@ -125,21 +127,22 @@ def find_soffice():
     return None
 
 
-def preview(dst, wd):
+def preview(dst, wd, target=None):
     so = find_soffice()
     if not so:
         print('   AVISO: sin LibreOffice no hay vista previa (no afecta al .vsdx)')
         return
     stem = os.path.splitext(os.path.basename(dst))[0]
+    target = target or os.path.splitext(os.path.abspath(dst))[0] + '_preview.png'
     try:
         if shutil.which('pdftoppm'):
             run([so, '--headless', '--convert-to', 'pdf', '--outdir', wd, os.path.abspath(dst)], quiet=True)
             run(['pdftoppm', '-r', '110', '-png', '-singlefile', os.path.join(wd, stem + '.pdf'),
-                 os.path.splitext(os.path.abspath(dst))[0] + '_preview'], quiet=True)
+                 os.path.splitext(target)[0]], quiet=True)
         else:
             run([so, '--headless', '--convert-to', 'png', '--outdir', wd, os.path.abspath(dst)], quiet=True)
-            shutil.move(os.path.join(wd, stem + '.png'), os.path.splitext(os.path.abspath(dst))[0] + '_preview.png')
-        print('   vista previa:', os.path.splitext(dst)[0] + '_preview.png')
+            shutil.move(os.path.join(wd, stem + '.png'), target)
+        print('   vista previa:', target)
     except Exception as e:
         print('   AVISO: no se pudo generar la vista previa (%s)' % e)
 
@@ -166,21 +169,38 @@ for f in files:
         single = a.output
     names = page_names(f)
     idxs = [a.page_index] if a.page_index is not None else list(range(len(names)))
+    multi = len(names) > 1
+    combine = multi and len(idxs) > 1 and not a.split
+    target = single or os.path.join(outdir, stem + '.vsdx')
+    parts = []
     for i in idxs:
-        if single and len(idxs) == 1:
-            dst = single
-        elif len(names) > 1:
-            dst = os.path.join(outdir, '%s_%s.vsdx' % (stem, safe(names[i] if i < len(names) and names[i] else 'pagina%d' % (i + 1))))
+        pname = names[i] if i < len(names) and names[i] else 'Página %d' % (i + 1)
+        pdir = os.path.join(base_wd, '%s_p%d' % (safe(stem), i))
+        if combine:
+            dst = os.path.join(pdir, 'pagina.vsdx')
+        elif multi and not (single and len(idxs) == 1):
+            dst = os.path.join(outdir, '%s_%s.vsdx' % (stem, safe(pname)))
         else:
-            dst = os.path.join(outdir, stem + '.vsdx')
-        print('-> %s%s' % (os.path.basename(f), (' [página %d: %s]' % (i + 1, names[i]) if len(names) > 1 else '')), flush=True)
+            dst = target
+        prev = os.path.join(outdir, '%s_%s_preview.png' % (stem, safe(pname))) if multi else None
+        print('-> %s%s' % (os.path.basename(f), (' [pestaña %d: %s]' % (i + 1, pname)) if multi else ''), flush=True)
         try:
-            convert_page(f, dst, i, os.path.join(base_wd, '%s_p%d' % (safe(stem), i)))
-            print('   OK:', dst)
-            ok.append(dst)
+            convert_page(f, dst, i, pdir, prev)
+            parts.append((dst, pname))
+            if not combine:
+                print('   OK:', dst)
+                ok.append(dst)
         except Exception as e:
             print('   ERROR:', e)
-            fail.append('%s (página %d)' % (f, i + 1))
+            fail.append('%s (pestaña %d)' % (f, i + 1))
+    if combine and parts:
+        try:
+            run([sys.executable, os.path.join(HERE, 'merge_vsdx.py'), target] + [x for p in parts for x in p], quiet=True)
+            print('   OK: %s (%d páginas)' % (target, len(parts)))
+            ok.append(target)
+        except Exception as e:
+            print('   ERROR al unir las páginas:', e)
+            fail.append(f)
 
 print('\n%d convertido(s), %d con error.' % (len(ok), len(fail)))
 if fail:

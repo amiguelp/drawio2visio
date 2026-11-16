@@ -72,6 +72,7 @@ prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
 | Nombres de iconos metidos dentro del icono y partidos en líneas | Un cuadro de texto por etiqueta, en la posición que tenía en draw.io y agrupado con el icono. Si la etiqueta tiene varias líneas con estilos distintos (título + subtítulo gris), van en el mismo cuadro, cada línea con su tamaño, color y negrita |
 | Visio re-enruta las flechas al abrir o se descuelgan | Flechas con los puntos exactos de draw.io, pegadas a un punto de conexión creado justo donde llegan. Visio conserva el trazado hasta que mueves una de sus formas |
 | Cabeceras de contenedores perdidas, hijos descolocados | Contenedor = cuerpo + cabecera en coordenadas absolutas |
+| Esquinas redondeadas mucho más grandes en Visio: el exportador pone el radio al 10 % del ancho | Radio calculado como draw.io (15 % del lado menor, o `arcSize` / `absoluteArcSize` de la forma; flechas redondeadas incluidas) |
 | Iconos SVG minúsculos y borrosos | Rasterizado a ≥256 px |
 | Iconos de librerías (Cisco, AWS, Citrix, redes, P&ID…) convertidos en cuadrados de color | draw.io dibuja cada icono y se inserta como imagen en alta resolución (su nombre sigue siendo texto editable). Se añaden las librerías de stencils actuales de draw.io |
 | Imágenes pegadas dentro de un texto (p. ej. un diagrama pegado como imagen) | Se insertan como imagen; antes la pestaña quedaba vacía y daba error |
@@ -94,6 +95,8 @@ prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
 - *El contenido no cabe en A4*: prueba `--page A3` o `--orientation landscape`.
 - Si no encuentra Edge/Chrome, indica la ruta:
   `set DRAWIO_BROWSER=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`
+- La vista previa de LibreOffice no dibuja las esquinas redondeadas de Visio
+  (salen rectas); en Visio sí aparecen.
 - La vista previa de LibreOffice dibuja a veces un marco fino alrededor de los
   iconos, y en etiquetas de varias líneas con tildes puede pintar la primera
   letra de la segunda línea con el tamaño de la primera. Son fallos de ese

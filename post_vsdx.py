@@ -136,6 +136,11 @@ for sh, m in zip(shapes, meta):
         v = cell(sh, name)
         if v is not None:
             sh = re.sub(r'<Cell N="%s" V="[^"]*"(?: F="[^"]*")?/>' % name, '<Cell N="%s" V="%r"/>' % (name, v + d), sh, count=1)
+    # the exporter writes Rounding twice (0.1*width, then the canvas radius) and Visio
+    # takes the first: replace both with draw.io's real corner radius
+    sh = re.sub(r'<Cell N="Rounding" V="[^"]*"(?: F="[^"]*")?(?: U="[^"]*")?/>', '', sh)
+    if m.get('rounding'):
+        sh = set_cell(sh, 'Rounding', repr(m['rounding'] / PX))
     if m['kind'] == 'e':
         sh = set_cell(sh, 'ConFixedCode', 2)
         sh = drop_cell(sh, 'TextBkgnd')

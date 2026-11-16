@@ -207,6 +207,17 @@ def group_from(start):
         for i in idx:
             meta[i]['group'] = gid[0]
 
+def corner_radius(d, w, h, edge=False):
+    """Corner radius in px exactly as draw.io draws it (mxRectangleShape / mxConnector)."""
+    if not is_on(d, 'rounded'):
+        return 0
+    if edge:
+        return float(d.get('arcSize', '20')) / 2
+    if d.get('absoluteArcSize') == '1':
+        return min(w / 2, h / 2, float(d.get('arcSize', '20')) / 2)
+    f = float(d.get('arcSize', '15')) / 100
+    return min(w * f, h * f)
+
 def emit_vertex(style, value, b, m):
     uid[0] += 1
     cells.append('<mxCell id="v%d" value=%s style=%s vertex="1" parent="1"><mxGeometry x="%s" y="%s" width="%s" height="%s" as="geometry"/></mxCell>'
@@ -337,7 +348,8 @@ for o in dump:
             keep['fontSize'] = '%g' % lines[0]['size']; keep['fontColor'] = lines[0]['color']
             keep['fontStyle'] = str((int(keep.get('fontStyle', '0') or 0) & ~1) | (1 if lines[0]['bold'] else 0))
         sp = float(d.get('spacing', '2'))
-        m = {'align': d.get('align', 'center'), 'valign': d.get('verticalAlign', 'middle'), 'bold': bool(in_text) and lines[0]['bold'],
+        m = {'rounding': corner_radius(d, b[2], b[3]),
+             'align': d.get('align', 'center'), 'valign': d.get('verticalAlign', 'middle'), 'bold': bool(in_text) and lines[0]['bold'],
              'image': False, 'margins': (sp + float(d.get('spacingLeft', '0')), sp + float(d.get('spacingRight', '0')),
                                          sp + float(d.get('spacingTop', '0')), sp + float(d.get('spacingBottom', '0')))}
         emit_vertex('html=0;whiteSpace=wrap;' + style_str(keep) + FONT, in_text, b, m)
@@ -400,6 +412,7 @@ for o in edges:
     if keep.get('strokeColor', 'default') == 'default':
         keep['strokeColor'] = '#000000'
     emit_edge('html=1;rounded=%s;' % d.get('rounded', '0') + style_str(keep), pts)
+    meta[-1]['rounding'] = corner_radius(d, 0, 0, edge=True)
     # glue: the shape at each end (resolved to Visio shape indices)
     for end, key in (('src', 'source'), ('tgt', 'target')):
         if o.get(key) in id2idx:

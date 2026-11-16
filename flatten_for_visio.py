@@ -106,6 +106,42 @@ def parse_label(value, d):
                           'bold': (base['bold'] or bool(bold)) and not notbold})
     return lines
 
+def label_lines(o, d):
+    """Lines of the label with per-run format. Uses what draw.io actually painted
+    (dump 'runs': computed colour, weight, size...) and falls back to parsing the value."""
+    runs = o.get('runs')
+    if runs:
+        out = []
+        for segs in runs:
+            segs = [dict(r, text=r['text'].replace('\xa0', ' ')) for r in segs]
+            text = ''.join(r['text'] for r in segs).strip()
+            if not text:
+                continue
+            out.append({'text': text, 'size': max(r['size'] for r in segs), 'color': segs[0]['color'],
+                        'bold': all(r['bold'] for r in segs if r['text'].strip()), 'segs': segs})
+        return out
+    lines = parse_label(o.get('value', ''), d)
+    for l in lines:
+        l['segs'] = [{'text': l['text'], 'size': l['size'], 'color': l['color'], 'bold': bool(l['bold']),
+                      'italic': False, 'underline': False}]
+    return lines
+
+def bg_of(d, text_cell=False):
+    """Background colour draw.io paints behind a label (None = transparent)."""
+    lbg = d.get('labelBackgroundColor')
+    if lbg == 'default':
+        return '#FFFFFF'
+    if lbg and lbg != 'none':
+        return lbg
+    if text_cell:
+        f = d.get('fillColor')
+        if f and f not in ('none', 'default'):
+            return f
+    return None
+
+def runs_of(lines):
+    return [{'segs': l['segs']} for l in lines]
+
 def text_width(text, size, bold):
     w = sum(0.72 if c.isupper() else 0.33 if c in ' .,:;·|il!' else 0.57 for c in text) * size
     return w * (1.06 if bold else 1.0)
@@ -197,6 +233,17 @@ def hires_image(url, box, bg):
 cells, meta = [], []
 uid = [0]
 id2idx = {}   # draw.io cell id -> meta index of the Visio shape that represents it
+keys = []     # z-order key of every emitted cell (draw.io model order)
+cur_key = [0]
+cur_alpha = [None]   # transparencies of the cell being emitted (opacity, fillOpacity, ...)
+
+def alpha_of(d):
+    op = float(d.get('opacity', '100') or 100) / 100
+    a = {'fill': 1 - op * float(d.get('fillOpacity', '100') or 100) / 100,
+         'line': 1 - op * float(d.get('strokeOpacity', '100') or 100) / 100,
+         'text': 1 - float(d.get('textOpacity', '100') or 100) / 100,
+         'img': 1 - op}
+    return {k: round(v, 4) for k, v in a.items() if v > 0.001} or None
 gid = [0]
 
 def group_from(start):
@@ -222,7 +269,8 @@ def emit_vertex(style, value, b, m):
     uid[0] += 1
     cells.append('<mxCell id="v%d" value=%s style=%s vertex="1" parent="1"><mxGeometry x="%s" y="%s" width="%s" height="%s" as="geometry"/></mxCell>'
                  % (uid[0], q(value), q(style), r(b[0]), r(b[1]), r(b[2]), r(b[3])))
-    meta.append(dict({'kind': 'v', 'text': bool(value)}, **m))
+    meta.append(dict({'kind': 'v', 'text': bool(value), 'alpha': cur_alpha[0]}, **m))
+    keys.append(cur_key[0])
 
 def emit_edge(style, pts):
     uid[0] += 1
@@ -230,7 +278,8 @@ def emit_edge(style, pts):
     arr = ('<Array as="points">' + ''.join('<mxPoint x="%s" y="%s"/>' % (r(a), r(b)) for a, b in mid) + '</Array>') if mid else ''
     cells.append('<mxCell id="e%d" style=%s edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="%s" y="%s" as="sourcePoint"/><mxPoint x="%s" y="%s" as="targetPoint"/>%s</mxGeometry></mxCell>'
                  % (uid[0], q(style), r(s[0]), r(s[1]), r(t[0]), r(t[1]), arr))
-    meta.append({'kind': 'e'})
+    meta.append({'kind': 'e', 'alpha': cur_alpha[0]})
+    keys.append(cur_key[0])
 
 def text_style(align, valign, line, extra=''):
     return ('text;html=0;whiteSpace=wrap;strokeColor=none;fillColor=none;spacing=0;align=%s;verticalAlign=%s;fontSize=%s;fontColor=%s;fontStyle=%d;%s%s'
@@ -252,10 +301,9 @@ def emit_text_block(lines, box, align='center', valign='top', extra='', bg=None)
     tx = x + w / 2 - tw / 2 if align == 'center' else (x if align == 'left' else x + w - tw)
     fill = 'fillColor=%s;' % bg if bg else ''
     style = text_style(align, 'top', lines[0], extra + fill).replace('fillColor=none;' if bg else '\u00a7', '')
-    m = {'align': align, 'valign': 'top', 'margins': (0, 0, 0, 0), 'bold': lines[0]['bold'], 'image': False}
-    if len(lines) > 1:
-        m['runs'] = [{'text': l['text'], 'size': l['size'], 'color': l['color'], 'bold': bool(l['bold'])} for l in lines]
-        m['bold'] = False
+    m = {'align': align, 'valign': 'top', 'margins': (0, 0, 0, 0), 'bold': lines[0]['bold'], 'image': False, 'textbg': bg}
+    m['runs'] = runs_of(lines)
+    m['bold'] = False
     emit_vertex(style, '\n'.join(l['text'] for l in lines), (tx, y, tw, total), m)
     return [(tx, y, tw, total)]
 
@@ -265,14 +313,17 @@ label_boxes = []   # (owner_box, label_box)
 image_boxes = [o['b'] for o in dump if not o['edge'] and (o.get('raster') or 'image' in st(o['style']) or st(o['style']).get('shape') == 'image')]
 
 edges = []
-for o in dump:
+for k, o in enumerate(dump):
+    o['_k'] = k
+    cur_key[0] = k
+    cur_alpha[0] = alpha_of(st(o['style']))
     d = st(o['style'])
     if o['edge']:
         edges.append(o); continue
     b = o['b']
     if 'group' in d and not o['value']:
         continue
-    lines = parse_label(o['value'], d)
+    lines = label_lines(o, d)
 
     # ---- swimlanes / titled containers
     if 'swimlane' in d:
@@ -299,9 +350,8 @@ for o in dump:
                 meta[-1]['owner'] = g0 + 1        # title = text of the header
             else:
                 vm = {'align': 'center', 'valign': 'middle', 'margins': (0, 0, 0, 0), 'bold': lines[0]['bold'], 'image': False}
-                if len(lines) > 1:
-                    vm['runs'] = [{'text': l['text'], 'size': l['size'], 'color': l['color'], 'bold': bool(l['bold'])} for l in lines]
-                    vm['bold'] = False
+                vm['runs'] = runs_of(lines)
+                vm['bold'] = False
                 emit_vertex(text_style('center', 'middle', lines[0], 'rotation=-90;'), '\n'.join(l['text'] for l in lines),
                             (hb[0] + ss / 2 - hb[3] / 2, hb[1] + hb[3] / 2 - ss / 2, hb[3], ss), vm)
         group_from(g0)
@@ -310,7 +360,7 @@ for o in dump:
     # ---- plain text cells
     if 'text' in d and not d.get('shape') and not o.get('raster'):
         id2idx[o['id']] = len(meta)
-        emit_text_block(lines, b, d.get('align', 'center'), d.get('verticalAlign', 'middle'))
+        emit_text_block(lines, b, d.get('align', 'center'), d.get('verticalAlign', 'middle'), bg=bg_of(d, True))
         continue
 
     if o.get('raster'):                 # stencil or pasted picture drawn by draw.io
@@ -321,7 +371,7 @@ for o in dump:
     is_image = 'image' in d or d.get('shape') == 'image'
     tb = o.get('tb')
     outside = bool(tb) and not inside(tb, b)
-    multi = len({(l['size'], l['color'], l['bold']) for l in lines}) > 1
+    multi = len({(r['size'], r['color'], r['bold'], r.get('italic'), r.get('underline')) for l in lines for r in l['segs']}) > 1
 
     g0 = len(meta)
     id2idx[o['id']] = g0
@@ -343,7 +393,7 @@ for o in dump:
         for k, dv in (('fillColor', '#FFFFFF'), ('strokeColor', '#000000'), ('fontColor', '#000000')):
             if keep.get(k, 'default') == 'default':
                 keep[k] = dv
-        in_text = '' if (outside or multi) else '\n'.join(l['text'] for l in lines)
+        in_text = '' if outside else '\n'.join(l['text'] for l in lines)
         if in_text:
             keep['fontSize'] = '%g' % lines[0]['size']; keep['fontColor'] = lines[0]['color']
             keep['fontStyle'] = str((int(keep.get('fontStyle', '0') or 0) & ~1) | (1 if lines[0]['bold'] else 0))
@@ -352,13 +402,16 @@ for o in dump:
              'align': d.get('align', 'center'), 'valign': d.get('verticalAlign', 'middle'), 'bold': bool(in_text) and lines[0]['bold'],
              'image': False, 'margins': (sp + float(d.get('spacingLeft', '0')), sp + float(d.get('spacingRight', '0')),
                                          sp + float(d.get('spacingTop', '0')), sp + float(d.get('spacingBottom', '0')))}
+        if in_text:
+            m['runs'] = runs_of(lines)
+            m['bold'] = False
         emit_vertex('html=0;whiteSpace=wrap;' + style_str(keep) + FONT, in_text, b, m)
         if in_text:
             continue
     if lines:
         box = tb if tb else (b[0], b[1] + b[3] + 2, b[2], sum(l['size'] * 1.3 for l in lines))
         placed = emit_text_block(lines, box, d.get('align', 'center') if not is_image else 'center',
-                                 'top' if (is_image or outside) else d.get('verticalAlign', 'middle'))
+                                 'top' if (is_image or outside) else d.get('verticalAlign', 'middle'), bg=bg_of(d))
         if placed:
             meta[-1]['owner'] = g0                # the label is the text of its shape
         if placed:
@@ -405,6 +458,8 @@ def clear_label(pts, end):
 EDGE_KEYS = ('strokeColor', 'strokeWidth', 'dashed', 'dashPattern', 'endArrow', 'endFill', 'endSize',
              'startArrow', 'startFill', 'startSize', 'opacity', 'curved')
 for o in edges:
+    cur_key[0] = o['_k']
+    cur_alpha[0] = alpha_of(st(o['style']))
     d = st(o['style'])
     pts = clear_label(clear_label(snap(o['pts']), True), False)
     keep = {k: d[k] for k in EDGE_KEYS if k in d}
@@ -415,13 +470,29 @@ for o in edges:
     meta[-1]['rounding'] = corner_radius(d, 0, 0, edge=True)
     # glue: the shape at each end (resolved to Visio shape indices)
     for end, key in (('src', 'source'), ('tgt', 'target')):
-        if o.get(key) in id2idx:
-            meta[-1][end] = id2idx[o[key]]
-    lines = parse_label(o['value'], d)
+        if o.get(key):
+            meta[-1][end + '_id'] = o[key]
+    lines = label_lines(o, d)
     if lines and o.get('tb'):
         lbg = d.get('labelBackgroundColor')
         bg = '#FFFFFF' if lbg in (None, 'default') and lines else (None if lbg == 'none' else lbg)
         emit_text_block(lines, o['tb'], 'center', 'middle', bg=bg)
+
+for m in meta:
+    for end in ('src', 'tgt'):
+        if m.get(end + '_id') in id2idx:
+            m[end] = id2idx[m[end + '_id']]
+
+# same stacking order as draw.io: everything in model order (edges were computed last
+# because they need every label box, but they go back to their place)
+perm = sorted(range(len(cells)), key=lambda i: keys[i])
+newpos = {old: new for new, old in enumerate(perm)}
+cells = [cells[i] for i in perm]
+meta = [meta[i] for i in perm]
+for m in meta:
+    for f in ('owner', 'src', 'tgt'):
+        if m.get(f) is not None:
+            m[f] = newpos[m[f]]
 
 # ---------------------------------------------------------------- page
 minx = min([c for o in dump if not o['edge'] for c in [o['b'][0]]] + [p[0] for o in edges for p in o['pts']])

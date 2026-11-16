@@ -79,28 +79,41 @@ def relativize(sh, w, h):
         return body
     return re.sub(r'<Row T="(\w+)"[^>]*>.*?</Row>', row, sh, flags=re.S)
 
-def rich_text(sh, runs, ha):
-    """One text block, one paragraph per line, each with its own size/colour/weight."""
+def rich_text(sh, runs, ha, text_trans=0):
+    """Text exactly as draw.io paints it: one character run per piece of text with
+    its own colour, size, bold, italic and underline; a paragraph per line."""
     tpl = re.search(r'<Section N="Character">\s*(<Row IX="0">.*?</Row>)', sh, re.S)
-    if not tpl:
-        return sh
-    row0 = tpl.group(1)
-    size0 = float(re.search(r'<Cell N="Size" V="([^"]+)"', row0).group(1))
-    rows, txt = [], []
-    for i, rn in enumerate(runs):
-        r = row0.replace('<Row IX="0">', '<Row IX="%d">' % i, 1)
-        r = re.sub(r'<Cell N="Color" V="[^"]*"/>', '<Cell N="Color" V="%s"/>' % rn['color'], r)
-        r = re.sub(r'<Cell N="Size" V="[^"]*"/>', '<Cell N="Size" V="%r"/>' % (size0 * rn['size'] / runs[0]['size']), r)
-        r = re.sub(r'<Cell N="Style" V="[^"]*"/>', '<Cell N="Style" V="%d"/>' % (1 if rn['bold'] else 0), r)
-        rows.append(r)
-        txt.append('<cp IX="%d"/>%s' % (i, html.escape(rn['text'], False)))
-    sh = re.sub(r'<Section N="Character">.*?</Section>', '<Section N="Character">%s</Section>' % ''.join(rows), sh, count=1, flags=re.S)
+    row0 = tpl.group(1) if tpl else ('<Row IX="0"><Cell N="Color" V="#000000"/><Cell N="Size" V="0.1"/>'
+                                     '<Cell N="Font" V="Segoe UI"/><Cell N="Style" V="0"/></Row>')
+    rows, lines = [], []
+    n = 0
+    for ln in runs:
+        parts = []
+        for rn in ln['segs']:
+            r = row0.replace('<Row IX="0">', '<Row IX="%d">' % n, 1)
+            r = re.sub(r'<Cell N="Color" V="[^"]*"/>', '<Cell N="Color" V="%s"/>' % rn['color'], r)
+            r = re.sub(r'<Cell N="Size" V="[^"]*"/>', '<Cell N="Size" V="%r"/>' % (0.97 * rn['size'] / PX), r)
+            style = (1 if rn.get('bold') else 0) | (2 if rn.get('italic') else 0) | (4 if rn.get('underline') else 0)
+            r = re.sub(r'<Cell N="Style" V="[^"]*"/>', '<Cell N="Style" V="%d"/>' % style, r)
+            r = re.sub(r'<Cell N="ColorTrans" V="[^"]*"/>', '', r)
+            if text_trans:
+                r = r.replace('</Row>', '<Cell N="ColorTrans" V="%r"/></Row>' % text_trans)
+            rows.append(r)
+            parts.append('<cp IX="%d"/>%s' % (n, html.escape(rn['text'], False)))
+            n += 1
+        lines.append(''.join(parts))
+    char = '<Section N="Character">%s</Section>' % ''.join(rows)
+    if tpl:
+        sh = re.sub(r'<Section N="Character">.*?</Section>', lambda m: char, sh, count=1, flags=re.S)
+    else:
+        sh = sh.replace('<Text>', char + '<Text>', 1)
     para = '<Section N="Paragraph"><Row IX="0"><Cell N="HorzAlign" V="%d"/></Row></Section>' % ha
     if '<Section N="Paragraph">' in sh:
         sh = re.sub(r'<Section N="Paragraph">.*?</Section>', para, sh, count=1, flags=re.S)
     else:
         sh = sh.replace('<Text>', para + '<Text>', 1)
-    return re.sub(r'<Text>.*?</Text>', '<Text><pp IX="0"/>%s</Text>' % '\n'.join(txt), sh, count=1, flags=re.S)
+    body = '\n'.join(lines)
+    return re.sub(r'<Text>.*?</Text>', lambda m: '<Text><pp IX="0"/>%s</Text>' % body, sh, count=1, flags=re.S)
 
 # draw.io px per inch as written by VsdxExport (1 px = 0.254 mm)
 PX = 600 / 5.905511811023622
@@ -165,12 +178,28 @@ for sh, m in zip(shapes, meta):
                             lambda x: x.group(1) + '"%d"' % (int(x.group(2)) | 1), sh, count=1, flags=re.S)
             ha = {'left': 0, 'center': 1, 'right': 2}.get(m.get('align'), 1)
             if m.get('runs'):
-                sh = rich_text(sh, m['runs'], ha)
+                sh = rich_text(sh, m['runs'], ha, (m.get('alpha') or {}).get('text', 0))
             elif '<Section N="Paragraph">' in sh:
                 sh = re.sub(r'<Cell N="HorzAlign" V="[^"]*"/>', '<Cell N="HorzAlign" V="%d"/>' % ha, sh)
             else:
                 sh = sh.replace('<Text>', '<Section N="Paragraph"><Row IX="0"><Cell N="HorzAlign" V="%d"/></Row></Section><Text>' % ha, 1)
         sh = relativize(sh, w, h)
+    al = m.get('alpha') or {}
+    if al:
+        if m['kind'] == 'e':
+            if al.get('line'): sh = set_cell(sh, 'LineColorTrans', repr(al['line']))
+        elif m.get('image'):
+            if al.get('img'): sh = set_cell(sh, 'Transparency', repr(al['img']))
+        elif m.get('owner') is not None:
+            pass                     # label: its text goes into its shape
+        else:
+            if al.get('fill'):
+                sh = set_cell(sh, 'FillForegndTrans', repr(al['fill']))
+                sh = set_cell(sh, 'FillBkgndTrans', repr(al['fill']))
+            if al.get('line'): sh = set_cell(sh, 'LineColorTrans', repr(al['line']))
+        if m.get('textbg') and al.get('text'):
+            # label background fades with its text
+            sh = set_cell(sh, 'FillForegndTrans', repr(al['text']))
     out.append(sh)
 
 # ---------------------------------------------------------------- labels -> text of their shape
@@ -193,7 +222,7 @@ def insert_sections(sh, xml):
             return sh[:i] + xml + sh[i:]
     return sh
 
-def absorb(osh, lsh):
+def absorb(osh, lsh, textbg=None, textbg_trans=0):
     """Make the text of label shape `lsh` the text of `osh`, in the same place."""
     ox, oy, ow, oh = box(osh)
     lx, ly, lw, lh = box(lsh)
@@ -220,6 +249,10 @@ def absorb(osh, lsh):
         v = cell(lsh, n)
         if v is not None:
             osh = put_cell(osh, n, int(v) if n == 'VerticalAlign' else v)
+    if textbg:
+        osh = put_cell(osh, 'TextBkgnd', 0)
+        osh = re.sub(r'<Cell N="TextBkgnd" V="0"/>', '<Cell N="TextBkgnd" V="%s"/>' % textbg, osh, count=1)
+        osh = put_cell(osh, 'TextBkgndTrans', textbg_trans)
     return insert_sections(osh, ''.join(p.group(0) for p in parts if p) + text.group(0))
 
 drop = set()
@@ -227,7 +260,7 @@ if not a.separate_labels:
     for i, m in enumerate(meta):
         j = m.get('owner')
         if m['kind'] == 'v' and j is not None and 0 <= j < len(out) and j not in drop and '<Text>' in out[i]:
-            merged = absorb(out[j], out[i])
+            merged = absorb(out[j], out[i], m.get('textbg'), (m.get('alpha') or {}).get('text', 0))
             if merged:
                 out[j] = merged
                 drop.add(i)

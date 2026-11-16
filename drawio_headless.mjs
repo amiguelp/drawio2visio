@@ -3,6 +3,7 @@
 //   node drawio_headless.mjs dump   <in.drawio> <out.json>   [--page N]
 //   node drawio_headless.mjs export <in.drawio> <out.vsdx>
 //   node drawio_headless.mjs raster <jobs.json> -      (SVG -> PNG sin cairo)
+//   node drawio_headless.mjs png    <in.drawio> <out.png> [--page N]  (referencia: cómo lo pinta draw.io)
 //
 // dump   : loads the diagram and writes, for every cell, its absolute bounds,
 //          the bounds of its label as draw.io laid it out, and for every edge
@@ -28,7 +29,7 @@ const pw = pwMod.chromium || (pwMod.default && pwMod.default.chromium);
 const [mode, inFile, outFile] = process.argv.slice(2);
 const pageArg = process.argv.indexOf('--page');
 const pageIndex = pageArg > 0 ? parseInt(process.argv[pageArg + 1], 10) : 0;
-if (!['dump', 'export', 'raster'].includes(mode) || !inFile || !outFile) {
+if (!['dump', 'export', 'raster', 'png'].includes(mode) || !inFile || !outFile) {
   console.error('usage: node drawio_headless.mjs dump|export|raster <in> <out> [--page N]');
   process.exit(2);
 }
@@ -133,11 +134,63 @@ await page.evaluate(async ({ xml, pageIndex }) => {
   await new Promise(r => setTimeout(r, 2500));   // let images and fonts settle
 }, { xml, pageIndex });
 
+if (mode === 'png') {
+  const svg = await page.evaluate(() => {
+    const g = window.theUi.editor.graph;
+    return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(mxUtils.getXml(g.getSvg('#ffffff', 1, 10)))));
+  });
+  const shot = await browser.newPage();
+  await shot.setContent('<html><body style="margin:0;background:#fff"><img id="i"></body></html>');
+  const [w, h] = await shot.evaluate(async (src) => { const i = document.getElementById('i'); await new Promise(ok => { i.onload = ok; i.onerror = ok; i.src = src; }); return [i.naturalWidth, i.naturalHeight]; }, svg);
+  await shot.setViewportSize({ width: Math.max(1, Math.min(w, 8000)), height: Math.max(1, Math.min(h, 8000)) });
+  await shot.locator('#i').screenshot({ path: outFile });
+  console.log('png', w, h);
+  await browser.close(); server.close(); process.exit(0);
+}
 if (mode === 'dump') {
   const out = await page.evaluate(() => {
     const g = window.theUi.editor.graph, v = g.view, s = v.scale, t = v.translate, m = g.model;
     const abs = (x, y) => [x / s - t.x, y / s - t.y];
     const res = [];
+    // Text exactly as draw.io paints it: lines of runs with their computed format
+    const hex = (c) => { const m = (c || '').match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/); return m ? '#' + [m[1], m[2], m[3]].map(x => (+x | 0).toString(16).padStart(2, '0')).join('').toUpperCase() : null; };
+    const fmt = (el) => { const cs = getComputedStyle(el); const fw = cs.fontWeight;
+      return { color: hex(cs.color) || hex(cs.fill) || '#000000', size: parseFloat(cs.fontSize) || 12,
+               bold: fw === 'bold' || fw === 'bolder' || parseInt(fw) >= 600, italic: cs.fontStyle === 'italic',
+               underline: (cs.textDecorationLine || cs.textDecoration || '').indexOf('underline') >= 0 }; };
+    const BLOCK = /^(DIV|P|LI|UL|OL|H[1-6]|TABLE|TR|BLOCKQUOTE|PRE)$/;
+    const textRuns = (st) => {
+      const tn = st.text && st.text.node; if (!tn) return null;
+      const lines = [[]];
+      const nl = () => { if (lines[lines.length - 1].length) lines.push([]); };
+      const fo = tn.querySelector('foreignObject');
+      if (fo) {
+        let root = fo.querySelector('div');
+        while (root && root.childNodes.length === 1 && root.firstElementChild && root.firstElementChild.tagName === 'DIV') root = root.firstElementChild;
+        if (!root) return null;
+        const walkT = (n) => {
+          for (const c of n.childNodes) {
+            if (c.nodeType === 3) {
+              const t = c.textContent.replace(/\s+/g, ' ');
+              if (t.trim() || (t && lines[lines.length - 1].length)) lines[lines.length - 1].push(Object.assign({ text: t }, fmt(c.parentElement)));
+            } else if (c.nodeType === 1) {
+              if (c.tagName === 'BR') { lines.push([]); continue; }
+              if (getComputedStyle(c).display === 'none') continue;
+              const blk = BLOCK.test(c.tagName);
+              if (blk) nl();
+              walkT(c);
+              if (blk) nl();
+            }
+          }
+        };
+        walkT(root);
+      } else {
+        for (const t of tn.querySelectorAll('text')) { lines[lines.length - 1].push(Object.assign({ text: t.textContent }, fmt(t))); lines.push([]); }
+      }
+      const out = lines.map(l => { if (l.length) { l[0].text = l[0].text.replace(/^ +/, ''); l[l.length - 1].text = l[l.length - 1].text.replace(/ +$/, ''); } return l.filter(r => r.text); })
+                       .filter(l => l.length);
+      return out.length ? out : null;
+    };
     const walk = (cell) => {
       for (let i = 0; i < m.getChildCount(cell); i++) {
         const c = m.getChildAt(cell, i);
@@ -151,6 +204,7 @@ if (mode === 'dump') {
             if (vt) o.target = vt.id;
           }
           else { const [x, y] = abs(st.x, st.y); o.b = [x, y, st.width / s, st.height / s]; }
+          try { const r = textRuns(st); if (r) o.runs = r; } catch (e) {}
           if (st.text && st.text.boundingBox) {
             const bb = st.text.boundingBox; const [x, y] = abs(bb.x, bb.y);
             o.tb = [x, y, bb.width / s, bb.height / s];

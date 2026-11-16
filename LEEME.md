@@ -6,9 +6,12 @@ de forma que en Visio:
 - **los textos quedan donde estaban** (nombres bajo los iconos, títulos de
   contenedores, etiquetas de flechas, textos con título + subtítulo);
 - **las formas se pueden redimensionar** (rectángulos, iconos y contenedores);
-- **las flechas mantienen exactamente su trazado**;
-- **cada icono va agrupado con su nombre** y cada contenedor con su cabecera,
-  así que se mueven juntos;
+- **las flechas mantienen exactamente su trazado y están pegadas a sus
+  formas**: al mover una forma, la flecha la sigue;
+- **las etiquetas son el texto de su forma** (el nombre de un icono es el
+  texto del icono, colocado debajo como en draw.io), así que se mueven con
+  ella y se editan haciendo doble clic en la forma;
+- cada contenedor va agrupado con su cabecera;
 - los iconos SVG salen nítidos (≥256 px) y la fuente es Segoe UI.
 
 ## Requisitos (una sola vez)
@@ -53,7 +56,9 @@ prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
 | `--font "Segoe UI"` | Fuente de destino |
 | `--page-index N` | Solo esa pestaña (0 = la primera) |
 | `--split` | Un `.vsdx` por pestaña en vez de uno con todas |
-| `--no-group` | No agrupar icono+nombre ni contenedor+cabecera |
+| `--no-group` | No agrupar contenedor+cabecera |
+| `--no-glue` | Flechas sin pegar: no cambian nunca, pero no siguen a las formas |
+| `--separate-labels` | Etiquetas como cuadros de texto aparte, agrupados con su forma |
 | `--image-map map.json` | Sustituir iconos que no se encuentran (ver abajo) |
 | `--preview` | PNG de comprobación (requiere LibreOffice) |
 | `--workdir DIR` / `-v` | Conservar intermedios / ver cada paso |
@@ -65,7 +70,7 @@ prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
 | Formas que no cambian de tamaño en Visio: la geometría se escribe con números fijos | Pone fórmulas relativas (`Width*…`, `Height*…`) en geometría, imágenes y bloque de texto |
 | Textos desplazados: bloques de texto con desfases y sustitución de fuente | Bloque de texto = la forma exacta, alineación y márgenes explícitos, fuente Segoe UI |
 | Nombres de iconos metidos dentro del icono y partidos en líneas | Un cuadro de texto por etiqueta, en la posición que tenía en draw.io y agrupado con el icono. Si la etiqueta tiene varias líneas con estilos distintos (título + subtítulo gris), van en el mismo cuadro, cada línea con su tamaño, color y negrita |
-| Visio re-enruta las flechas | Flechas con los puntos exactos de draw.io y `ConFixedCode=2` |
+| Visio re-enruta las flechas al abrir o se descuelgan | Flechas con los puntos exactos de draw.io, pegadas a un punto de conexión creado justo donde llegan. Visio conserva el trazado hasta que mueves una de sus formas |
 | Cabeceras de contenedores perdidas, hijos descolocados | Contenedor = cuerpo + cabecera en coordenadas absolutas |
 | Iconos SVG minúsculos y borrosos | Rasterizado a ≥256 px |
 | Iconos de librerías (Cisco, AWS, Citrix, redes, P&ID…) convertidos en cuadrados de color | draw.io dibuja cada icono y se inserta como imagen en alta resolución (su nombre sigue siendo texto editable). Se añaden las librerías de stencils actuales de draw.io |
@@ -73,8 +78,9 @@ prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
 
 ## A tener en cuenta
 
-- Las flechas **no están pegadas** a las formas (por eso no se mueven), así
-  que si desplazas un icono en Visio tendrás que reajustar su flecha.
+- Al mover una forma, Visio vuelve a trazar sus flechas a su manera
+  (ángulos rectos). Si prefieres que nunca cambien, usa `--no-glue`.
+- Las etiquetas de las flechas siguen siendo cuadros de texto aparte.
 - Si un aviso dice *imagen no encontrada localmente*, el icono venía de una
   URL externa. Pásale un sustituto con `--image-map`:
   ```json

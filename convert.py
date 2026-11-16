@@ -12,7 +12,9 @@ Opciones:
   --image-map map.json             sustituir iconos que no se encuentran
   --page-index N                   exportar solo esa página (0 = la primera)
   --split                          un .vsdx por pestaña en vez de uno con todas
-  --no-group                       no agrupar icono+nombre ni contenedor+cabecera
+  --no-group                       no agrupar contenedor+cabecera
+  --no-glue                        flechas sin pegar a las formas (no se mueven nunca)
+  --separate-labels                etiquetas como cuadros de texto aparte (agrupados)
   --preview                        genera un PNG de comprobación (requiere LibreOffice)
   --workdir DIR                    conservar ficheros intermedios
 
@@ -43,6 +45,8 @@ ap.add_argument('--image-map', default=None)
 ap.add_argument('--page-index', default=None, type=int)
 ap.add_argument('--preview', action='store_true')
 ap.add_argument('--split', action='store_true', help='un .vsdx por pestaña')
+ap.add_argument('--no-glue', action='store_true', help='no pegar las flechas a las formas')
+ap.add_argument('--separate-labels', action='store_true', help='etiquetas como cuadros de texto aparte')
 ap.add_argument('--no-group', action='store_true', help='no agrupar icono+nombre ni contenedor+cabecera')
 ap.add_argument('--workdir', default=None)
 ap.add_argument('--verbose', '-v', action='store_true')
@@ -111,7 +115,8 @@ def convert_page(src, dst, page_index, wd, prev_name=None):
             print('   ' + line)
     run([NODE, HEADLESS, 'export', flat, raw], quiet=True)
     run([sys.executable, os.path.join(HERE, 'post_vsdx.py'), raw, flat + '.meta.json', os.path.abspath(dst),
-         '--page', a.page, '--orientation', a.orientation] + (['--no-group'] if a.no_group else []))
+         '--page', a.page, '--orientation', a.orientation] + (['--no-group'] if a.no_group else [])
+         + (['--no-glue'] if a.no_glue else []) + (['--separate-labels'] if a.separate_labels else []))
     if a.preview:
         preview(dst, wd, prev_name)
 

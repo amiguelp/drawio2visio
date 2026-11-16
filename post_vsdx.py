@@ -23,6 +23,8 @@ ap.add_argument('src'); ap.add_argument('meta'); ap.add_argument('dst')
 ap.add_argument('--page', default='A4')
 ap.add_argument('--orientation', default='auto')
 ap.add_argument('--no-group', action='store_true')
+ap.add_argument('--no-glue', action='store_true')
+ap.add_argument('--separate-labels', action='store_true')
 a = ap.parse_args()
 
 meta = json.load(open(a.meta))
@@ -44,7 +46,7 @@ def set_cell(sh, name, value):
     new = '<Cell N="%s" V="%s"/>' % (name, value)
     if re.search(pat, sh):
         return re.sub(pat, new, sh, count=1)
-    return re.sub(r'(<Cell N="LocPinY" V="[^"]*"/>)', lambda m: m.group(1) + new, sh, count=1)
+    return re.sub(r'(<Cell N="LocPinY" V="[^"]*"(?: F="[^"]*")?/>)', lambda m: m.group(1) + new, sh, count=1)
 
 def drop_cell(sh, name):
     return re.sub(r'<Cell N="%s" V="[^"]*"(?: F="[^"]*")?/>' % name, '', sh)
@@ -166,6 +168,104 @@ for sh, m in zip(shapes, meta):
         sh = relativize(sh, w, h)
     out.append(sh)
 
+# ---------------------------------------------------------------- labels -> text of their shape
+def put_cell(sh, name, v, f=None):
+    new = '<Cell N="%s" V="%r"%s/>' % (name, v, (' F="%s"' % f) if f else '')
+    pat = r'<Cell N="%s" V="[^"]*"(?: F="[^"]*")?(?: U="[^"]*")?/>' % name
+    if re.search(pat, sh):
+        return re.sub(pat, lambda m: new, sh, count=1)
+    return re.sub(r'(<Cell N="LocPinY" V="[^"]*"(?: F="[^"]*")?/>)', lambda m: m.group(1) + new, sh, count=1)
+
+def box(sh):
+    px, py, w, h, lx, ly = (cell(sh, n) for n in ('PinX', 'PinY', 'Width', 'Height', 'LocPinX', 'LocPinY'))
+    return px - lx, py - ly, w, h
+
+def insert_sections(sh, xml):
+    """Sections (and Text) go before the geometry / picture data, as the exporter does."""
+    for anchor in ('<Section N="Geometry"', '<ForeignData', '</Shape>'):
+        i = sh.find(anchor)
+        if i >= 0:
+            return sh[:i] + xml + sh[i:]
+    return sh
+
+def absorb(osh, lsh):
+    """Make the text of label shape `lsh` the text of `osh`, in the same place."""
+    ox, oy, ow, oh = box(osh)
+    lx, ly, lw, lh = box(lsh)
+    cx, cy = lx + lw / 2 - ox, ly + lh / 2 - oy
+    parts = [re.search(r'<Section N="%s">.*?</Section>' % n, lsh, re.S) for n in ('Character', 'Paragraph')]
+    text = re.search(r'<Text>.*?</Text>', lsh, re.S)
+    if not text:
+        return None
+    for pat in (r'<Section N="Character">.*?</Section>', r'<Section N="Paragraph">.*?</Section>', r'<Text>.*?</Text>'):
+        osh = re.sub(pat, '', osh, flags=re.S)
+    osh = put_cell(osh, 'TxtPinX', cx, 'Width*0.5%+r' % round(cx - ow / 2, 10) if abs(cx - ow / 2) > 1e-6 else 'Width*0.5')
+    if cy < 0:                       # below the shape: fixed distance under its bottom edge
+        fy = '%r' % round(cy, 10)
+    elif cy > oh:                    # above: fixed distance over its top edge
+        fy = 'Height%+r' % round(cy - oh, 10)
+    else:
+        fy = 'Height*%r' % round(cy / oh, 10) if oh else None
+    osh = put_cell(osh, 'TxtPinY', cy, fy)
+    osh = put_cell(osh, 'TxtWidth', lw)
+    osh = put_cell(osh, 'TxtHeight', lh)
+    osh = put_cell(osh, 'TxtLocPinX', lw / 2, 'TxtWidth*0.5')
+    osh = put_cell(osh, 'TxtLocPinY', lh / 2, 'TxtHeight*0.5')
+    for n in ('LeftMargin', 'RightMargin', 'TopMargin', 'BottomMargin', 'VerticalAlign'):
+        v = cell(lsh, n)
+        if v is not None:
+            osh = put_cell(osh, n, int(v) if n == 'VerticalAlign' else v)
+    return insert_sections(osh, ''.join(p.group(0) for p in parts if p) + text.group(0))
+
+drop = set()
+if not a.separate_labels:
+    for i, m in enumerate(meta):
+        j = m.get('owner')
+        if m['kind'] == 'v' and j is not None and 0 <= j < len(out) and j not in drop and '<Text>' in out[i]:
+            merged = absorb(out[j], out[i])
+            if merged:
+                out[j] = merged
+                drop.add(i)
+
+# ---------------------------------------------------------------- glue arrows to their shapes
+def sid(sh):
+    return int(re.search(r'<Shape ID="(\d+)"', sh).group(1))
+
+connects, conn_rows = [], {}
+nglue = 0
+if not a.no_glue:
+    for i, m in enumerate(meta):
+        if m['kind'] != 'e':
+            continue
+        glued = False
+        for end, xc, yc, part, trig in (('src', 'BeginX', 'BeginY', 9, 'BegTrigger'), ('tgt', 'EndX', 'EndY', 12, 'EndTrigger')):
+            j = m.get(end)
+            if j is None or not (0 <= j < len(out)) or j in drop or meta[j]['kind'] != 'v':
+                continue
+            X, Y = cell(out[i], xc), cell(out[i], yc)
+            if X is None or Y is None:
+                continue
+            ox, oy, ow, oh = box(out[j])
+            x, y = X - ox, Y - oy
+            rows = conn_rows.setdefault(j, [])
+            n = len(rows) + 1
+            rows.append('<Row IX="%d"><Cell N="X" V="%r" F="Width*%r"/><Cell N="Y" V="%r" F="Height*%r"/>'
+                        '<Cell N="DirX" V="0"/><Cell N="DirY" V="0"/><Cell N="Type" V="0"/><Cell N="AutoGen" V="0"/></Row>'
+                        % (n - 1, x, round(x / ow, 10) if ow else 0, y, round(y / oh, 10) if oh else 0))
+            t = sid(out[j])
+            out[i] = put_cell(out[i], xc, X, 'PAR(PNT(Sheet.%d!Connections.X%d,Sheet.%d!Connections.Y%d))' % (t, n, t, n))
+            out[i] = put_cell(out[i], yc, Y, 'PAR(PNT(Sheet.%d!Connections.X%d,Sheet.%d!Connections.Y%d))' % (t, n, t, n))
+            out[i] = put_cell(out[i], trig, 2, '_XFTRIGGER(Sheet.%d!EventXFMod)' % t)
+            connects.append('<Connect FromSheet="%d" FromCell="%s" FromPart="%d" ToSheet="%d" ToCell="Connections.X%d" ToPart="%d"/>'
+                            % (sid(out[i]), xc, part, t, n, 99 + n))
+            glued = True
+        if glued:
+            # keep draw.io's route until a glued shape moves; then Visio reroutes it
+            out[i] = put_cell(out[i], 'ConFixedCode', 1)
+            nglue += 1
+    for j, rows in conn_rows.items():
+        out[j] = insert_sections(out[j], '<Section N="Connection">%s</Section>' % ''.join(rows))
+
 # ---------------------------------------------------------------- groups
 def num(sh, name):
     return cell(sh, name)
@@ -178,10 +278,12 @@ def setf(sh, name, v, f=None):
 next_id = max([int(i) for i in re.findall(r'<Shape ID="(\d+)"', page)] + [0]) + 1
 members = {}
 for i, m in enumerate(meta):
-    if m.get('group') and not a.no_group:
+    if m.get('group') and not a.no_group and i not in drop:
         members.setdefault(m['group'], []).append(i)
 final, done = [], set()
 for i, sh in enumerate(out):
+    if i in drop:
+        continue
     g = meta[i].get('group')
     if not g or len(members.get(g, [])) < 2:
         final.append(sh); continue
@@ -221,6 +323,10 @@ for i, sh in enumerate(out):
 if shapes:
     start = page.index(shapes[0]); end = page.rindex(shapes[-1]) + len(shapes[-1])
     page = page[:start] + ''.join(final) + page[end:]
+if connects:
+    page = re.sub(r'<Connects>.*?</Connects>|<Connects/>', '', page, flags=re.S)
+    k = page.rindex('</Shapes>') + len('</Shapes>')
+    page = page[:k] + '<Connects>%s</Connects>' % ''.join(connects) + page[k:]
 pages = re.sub(r'<Cell N="PageWidth" V="[^"]*"/>', '<Cell N="PageWidth" V="%r"/>' % PW, pages)
 pages = re.sub(r'<Cell N="PageHeight" V="[^"]*"/>', '<Cell N="PageHeight" V="%r"/>' % PH, pages)
 
@@ -233,4 +339,5 @@ for it in zin.infolist():
         data = pages.encode('utf-8')
     zout.writestr(it, data)
 zout.close()
-print('página %.2f x %.2f in, contenido %.2f x %.2f in, %d formas, %d grupos' % (PW, PH, cw, ch, len(out), len(done)))
+print('página %.2f x %.2f in, contenido %.2f x %.2f in, %d formas, %d grupos, %d etiquetas en su forma, %d flechas pegadas'
+      % (PW, PH, cw, ch, len(out) - len(drop), len(done), len(drop), nglue))

@@ -144,7 +144,12 @@ if (mode === 'dump') {
         const st = v.getState(c);
         if (st && g.isCellVisible(c) && c.parent !== m.root) {
           const o = { id: c.id, parent: c.parent ? c.parent.id : null, edge: c.edge ? 1 : 0, style: c.style || '', value: (typeof c.value === 'string') ? c.value : (c.value && c.value.getAttribute ? (c.value.getAttribute('label') || '') : '') };
-          if (c.edge) o.pts = st.absolutePoints.filter(Boolean).map(q => abs(q.x, q.y));
+          if (c.edge) {
+            o.pts = st.absolutePoints.filter(Boolean).map(q => abs(q.x, q.y));
+            const vs = st.getVisibleTerminal(true), vt = st.getVisibleTerminal(false);
+            if (vs) o.source = vs.id;
+            if (vt) o.target = vt.id;
+          }
           else { const [x, y] = abs(st.x, st.y); o.b = [x, y, st.width / s, st.height / s]; }
           if (st.text && st.text.boundingBox) {
             const bb = st.text.boundingBox; const [x, y] = abs(bb.x, bb.y);

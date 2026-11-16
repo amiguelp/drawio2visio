@@ -196,6 +196,7 @@ def hires_image(url, box, bg):
 # ---------------------------------------------------------------- emit
 cells, meta = [], []
 uid = [0]
+id2idx = {}   # draw.io cell id -> meta index of the Visio shape that represents it
 gid = [0]
 
 def group_from(start):
@@ -265,6 +266,7 @@ for o in dump:
     # ---- swimlanes / titled containers
     if 'swimlane' in d:
         g0 = len(meta)
+        id2idx[o['id']] = g0
         ss = float(d.get('startSize', '23'))
         horiz = d.get('horizontal', '1') != '0'
         dash = 'dashed=1;dashPattern=%s;' % d.get('dashPattern', '8 4') if is_on(d, 'dashed') else ''
@@ -283,6 +285,7 @@ for o in dump:
             if horiz:
                 tb = (hb[0] + (sp if al == 'left' else 0), hb[1], hb[2] - (sp if al == 'left' else 0), hb[3])
                 emit_text_block(lines, tb, al, 'middle')
+                meta[-1]['owner'] = g0 + 1        # title = text of the header
             else:
                 vm = {'align': 'center', 'valign': 'middle', 'margins': (0, 0, 0, 0), 'bold': lines[0]['bold'], 'image': False}
                 if len(lines) > 1:
@@ -295,6 +298,7 @@ for o in dump:
 
     # ---- plain text cells
     if 'text' in d and not d.get('shape') and not o.get('raster'):
+        id2idx[o['id']] = len(meta)
         emit_text_block(lines, b, d.get('align', 'center'), d.get('verticalAlign', 'middle'))
         continue
 
@@ -309,6 +313,7 @@ for o in dump:
     multi = len({(l['size'], l['color'], l['bold']) for l in lines}) > 1
 
     g0 = len(meta)
+    id2idx[o['id']] = g0
     if is_image:
         bg = None
         if not any(overlap(b, ob) for ob in image_boxes if ob is not b):
@@ -342,6 +347,8 @@ for o in dump:
         box = tb if tb else (b[0], b[1] + b[3] + 2, b[2], sum(l['size'] * 1.3 for l in lines))
         placed = emit_text_block(lines, box, d.get('align', 'center') if not is_image else 'center',
                                  'top' if (is_image or outside) else d.get('verticalAlign', 'middle'))
+        if placed:
+            meta[-1]['owner'] = g0                # the label is the text of its shape
         if placed:
             x0 = min(p[0] for p in placed); y0 = min(p[1] for p in placed)
             x1 = max(p[0] + p[2] for p in placed); y1 = max(p[1] + p[3] for p in placed)
@@ -393,6 +400,10 @@ for o in edges:
     if keep.get('strokeColor', 'default') == 'default':
         keep['strokeColor'] = '#000000'
     emit_edge('html=1;rounded=%s;' % d.get('rounded', '0') + style_str(keep), pts)
+    # glue: the shape at each end (resolved to Visio shape indices)
+    for end, key in (('src', 'source'), ('tgt', 'target')):
+        if o.get(key) in id2idx:
+            meta[-1][end] = id2idx[o[key]]
     lines = parse_label(o['value'], d)
     if lines and o.get('tb'):
         lbg = d.get('labelBackgroundColor')

@@ -64,7 +64,7 @@ prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
 |---|---|
 | Formas que no cambian de tamaño en Visio: la geometría se escribe con números fijos | Pone fórmulas relativas (`Width*…`, `Height*…`) en geometría, imágenes y bloque de texto |
 | Textos desplazados: bloques de texto con desfases y sustitución de fuente | Bloque de texto = la forma exacta, alineación y márgenes explícitos, fuente Segoe UI |
-| Nombres de iconos metidos dentro del icono y partidos en líneas | Cuadros de texto propios, en la posición que tenían en draw.io, agrupados con el icono |
+| Nombres de iconos metidos dentro del icono y partidos en líneas | Un cuadro de texto por etiqueta, en la posición que tenía en draw.io y agrupado con el icono. Si la etiqueta tiene varias líneas con estilos distintos (título + subtítulo gris), van en el mismo cuadro, cada línea con su tamaño, color y negrita |
 | Visio re-enruta las flechas | Flechas con los puntos exactos de draw.io y `ConFixedCode=2` |
 | Cabeceras de contenedores perdidas, hijos descolocados | Contenedor = cuerpo + cabecera en coordenadas absolutas |
 | Iconos SVG minúsculos y borrosos | Rasterizado a ≥256 px |
@@ -82,7 +82,9 @@ prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
 - Si no encuentra Edge/Chrome, indica la ruta:
   `set DRAWIO_BROWSER=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`
 - La vista previa de LibreOffice dibuja a veces un marco fino alrededor de los
-  iconos; es cosa del visor, en Visio no aparece.
+  iconos, y en etiquetas de varias líneas con tildes puede pintar la primera
+  letra de la segunda línea con el tamaño de la primera. Son fallos de ese
+  visor; en Visio no aparecen.
 
 ## Ficheros
 

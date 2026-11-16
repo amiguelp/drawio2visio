@@ -225,7 +225,9 @@ def text_style(align, valign, line, extra=''):
             % (align, valign, ('%g' % line['size']), line['color'], 1 if line['bold'] else 0, FONT, extra))
 
 def emit_text_block(lines, box, align='center', valign='top', extra='', bg=None):
-    """One text box per line, stacked from box top; widths sized for Visio fonts."""
+    """A single text box for the whole label. When the lines differ in size,
+    colour or weight, post_vsdx writes one paragraph per line with its own
+    character format (meta 'runs'). Width sized for Visio fonts."""
     if not lines:
         return []
     x, y, w, h = box
@@ -234,17 +236,16 @@ def emit_text_block(lines, box, align='center', valign='top', extra='', bg=None)
         y = y + (h - total) / 2
     elif valign == 'bottom':
         y = y + h - total
-    out = []
-    for l in lines:
-        lh = l['size'] * 1.3
-        tw = max(w, text_width(l['text'], l['size'], l['bold']) + 14)
-        tx = x + w / 2 - tw / 2 if align == 'center' else (x if align == 'left' else x + w - tw)
-        fill = 'fillColor=%s;' % bg if bg else ''
-        emit_vertex(text_style(align, 'top', l, extra + fill).replace('fillColor=none;' if bg else '§', ''), l['text'], (tx, y, tw, lh),
-                    {'align': align, 'valign': 'top', 'margins': (0, 0, 0, 0), 'bold': l['bold'], 'image': False})
-        out.append((tx, y, tw, lh))
-        y += lh
-    return out
+    tw = max(w, max(text_width(l['text'], l['size'], l['bold']) for l in lines) + 14)
+    tx = x + w / 2 - tw / 2 if align == 'center' else (x if align == 'left' else x + w - tw)
+    fill = 'fillColor=%s;' % bg if bg else ''
+    style = text_style(align, 'top', lines[0], extra + fill).replace('fillColor=none;' if bg else '\u00a7', '')
+    m = {'align': align, 'valign': 'top', 'margins': (0, 0, 0, 0), 'bold': lines[0]['bold'], 'image': False}
+    if len(lines) > 1:
+        m['runs'] = [{'text': l['text'], 'size': l['size'], 'color': l['color'], 'bold': bool(l['bold'])} for l in lines]
+        m['bold'] = False
+    emit_vertex(style, '\n'.join(l['text'] for l in lines), (tx, y, tw, total), m)
+    return [(tx, y, tw, total)]
 
 # containers: body colours for "what is behind an image"
 bodies = []   # (box, colour)
@@ -283,10 +284,12 @@ for o in dump:
                 tb = (hb[0] + (sp if al == 'left' else 0), hb[1], hb[2] - (sp if al == 'left' else 0), hb[3])
                 emit_text_block(lines, tb, al, 'middle')
             else:
-                for l in lines:
-                    emit_vertex(text_style('center', 'middle', l, 'rotation=-90;'), l['text'],
-                                (hb[0] + ss / 2 - hb[3] / 2, hb[1] + hb[3] / 2 - ss / 2, hb[3], ss),
-                                {'align': 'center', 'valign': 'middle', 'margins': (0, 0, 0, 0), 'bold': l['bold'], 'image': False})
+                vm = {'align': 'center', 'valign': 'middle', 'margins': (0, 0, 0, 0), 'bold': lines[0]['bold'], 'image': False}
+                if len(lines) > 1:
+                    vm['runs'] = [{'text': l['text'], 'size': l['size'], 'color': l['color'], 'bold': bool(l['bold'])} for l in lines]
+                    vm['bold'] = False
+                emit_vertex(text_style('center', 'middle', lines[0], 'rotation=-90;'), '\n'.join(l['text'] for l in lines),
+                            (hb[0] + ss / 2 - hb[3] / 2, hb[1] + hb[3] / 2 - ss / 2, hb[3], ss), vm)
         group_from(g0)
         continue
 

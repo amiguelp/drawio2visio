@@ -16,7 +16,7 @@
   * page: chosen paper size, content centred; if it does not fit, the page is
     enlarged to the content (reported) instead of clipping
 """
-import argparse, json, re, zipfile
+import argparse, html, json, re, zipfile
 
 ap = argparse.ArgumentParser()
 ap.add_argument('src'); ap.add_argument('meta'); ap.add_argument('dst')
@@ -77,6 +77,29 @@ def relativize(sh, w, h):
         return body
     return re.sub(r'<Row T="(\w+)"[^>]*>.*?</Row>', row, sh, flags=re.S)
 
+def rich_text(sh, runs, ha):
+    """One text block, one paragraph per line, each with its own size/colour/weight."""
+    tpl = re.search(r'<Section N="Character">\s*(<Row IX="0">.*?</Row>)', sh, re.S)
+    if not tpl:
+        return sh
+    row0 = tpl.group(1)
+    size0 = float(re.search(r'<Cell N="Size" V="([^"]+)"', row0).group(1))
+    rows, txt = [], []
+    for i, rn in enumerate(runs):
+        r = row0.replace('<Row IX="0">', '<Row IX="%d">' % i, 1)
+        r = re.sub(r'<Cell N="Color" V="[^"]*"/>', '<Cell N="Color" V="%s"/>' % rn['color'], r)
+        r = re.sub(r'<Cell N="Size" V="[^"]*"/>', '<Cell N="Size" V="%r"/>' % (size0 * rn['size'] / runs[0]['size']), r)
+        r = re.sub(r'<Cell N="Style" V="[^"]*"/>', '<Cell N="Style" V="%d"/>' % (1 if rn['bold'] else 0), r)
+        rows.append(r)
+        txt.append('<cp IX="%d"/>%s' % (i, html.escape(rn['text'], False)))
+    sh = re.sub(r'<Section N="Character">.*?</Section>', '<Section N="Character">%s</Section>' % ''.join(rows), sh, count=1, flags=re.S)
+    para = '<Section N="Paragraph"><Row IX="0"><Cell N="HorzAlign" V="%d"/></Row></Section>' % ha
+    if '<Section N="Paragraph">' in sh:
+        sh = re.sub(r'<Section N="Paragraph">.*?</Section>', para, sh, count=1, flags=re.S)
+    else:
+        sh = sh.replace('<Text>', para + '<Text>', 1)
+    return re.sub(r'<Text>.*?</Text>', '<Text><pp IX="0"/>%s</Text>' % '\n'.join(txt), sh, count=1, flags=re.S)
+
 # draw.io px per inch as written by VsdxExport (1 px = 0.254 mm)
 PX = 600 / 5.905511811023622
 
@@ -131,7 +154,9 @@ for sh, m in zip(shapes, meta):
                 sh = re.sub(r'(<Section N="Character">.*?<Cell N="Style" V=)"(\d+)"',
                             lambda x: x.group(1) + '"%d"' % (int(x.group(2)) | 1), sh, count=1, flags=re.S)
             ha = {'left': 0, 'center': 1, 'right': 2}.get(m.get('align'), 1)
-            if '<Section N="Paragraph">' in sh:
+            if m.get('runs'):
+                sh = rich_text(sh, m['runs'], ha)
+            elif '<Section N="Paragraph">' in sh:
                 sh = re.sub(r'<Cell N="HorzAlign" V="[^"]*"/>', '<Cell N="HorzAlign" V="%d"/>' % ha, sh)
             else:
                 sh = sh.replace('<Text>', '<Section N="Paragraph"><Row IX="0"><Cell N="HorzAlign" V="%d"/></Row></Section><Text>' % ha, 1)

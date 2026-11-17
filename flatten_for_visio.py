@@ -373,7 +373,8 @@ for k, o in enumerate(dump):
         stroke = 'strokeColor=%s;strokeWidth=%s;' % (d.get('strokeColor', '#000000'), d.get('strokeWidth', '1'))
         bodyfill = d.get('swimlaneFillColor', 'none')
         emit_vertex('rounded=0;html=1;fillColor=%s;%s%s' % (bodyfill, stroke, dash), '', b,
-                    {'align': 'center', 'valign': 'middle', 'margins': (0, 0, 0, 0), 'bold': False, 'image': False})
+                    {'align': 'center', 'valign': 'middle', 'margins': (0, 0, 0, 0), 'bold': False, 'image': False,
+                     'shadow': is_on(d, 'shadow')})
         if bodyfill not in ('none', ''):
             bodies.append((b, bodyfill))
         hb = (b[0], b[1], b[2], ss) if horiz else (b[0], b[1], ss, b[3])
@@ -432,7 +433,8 @@ for k, o in enumerate(dump):
         # a guessed background colour left white boxes on coloured containers
         img = hires_image(d.get('image', ''), b, None)
         emit_vertex('shape=image;html=1;imageAspect=0;aspect=fixed;image=%s;' % img, '', b,
-                    {'align': 'center', 'valign': 'middle', 'margins': (0, 0, 0, 0), 'bold': False, 'image': True})
+                    {'align': 'center', 'valign': 'middle', 'margins': (0, 0, 0, 0), 'bold': False, 'image': True,
+                     'shadow': is_on(d, 'shadow')})
     else:
         keep = {k: v for k, v in d.items() if k not in ('container', 'collapsible', 'fontSource', 'fontFamily', 'html',
                                                         'labelBackgroundColor', 'labelBorderColor', 'labelPosition',
@@ -537,6 +539,8 @@ for o in edges:
         keep['strokeColor'] = '#000000'
     emit_edge('html=1;rounded=%s;' % d.get('rounded', '0') + style_str(keep), pts)
     meta[-1]['rounding'] = corner_radius(d, 0, 0, edge=True)
+    if is_on(d, 'shadow'):
+        meta[-1]['shadow'] = True
     # glue: the shape at each end (resolved to Visio shape indices)
     for end, key in (('src', 'source'), ('tgt', 'target')):
         if o.get(key):

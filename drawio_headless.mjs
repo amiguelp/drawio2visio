@@ -293,6 +293,9 @@ if (mode === 'dump') {
         const st = v.getState(c);
         if (st && g.isCellVisible(c) && c.parent !== m.root) {
           const o = { id: c.id, parent: c.parent ? c.parent.id : null, edge: c.edge ? 1 : 0, style: c.style || '', value: (typeof c.value === 'string') ? c.value : (c.value && c.value.getAttribute ? (c.value.getAttribute('label') || '') : '') };
+          // sombra de todo el diagrama (casilla «Sombra» del panel Diagrama): se pasa a
+          // cada forma, salvo las que la desactivan con shadow=0
+          if (g.shadowVisible && !/(^|;)shadow=/.test(o.style)) o.style += ';shadow=1';
           if (c.edge) {
             o.pts = st.absolutePoints.filter(Boolean).map(q => abs(q.x, q.y));
             const vs = st.getVisibleTerminal(true), vt = st.getVisibleTerminal(false);

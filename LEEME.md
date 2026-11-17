@@ -13,6 +13,8 @@ de forma que en Visio:
   ella y se editan haciendo doble clic en la forma;
 - cada contenedor va agrupado con su cabecera;
 - las tablas HTML dentro de una etiqueta se reconstruyen con formas de Visio;
+- las tarjetas con icono (forma `label` de draw.io: icono arriba y texto debajo
+  en la misma forma) se separan en tarjeta + icono, agrupados y en su sitio;
 - los iconos SVG salen nítidos (≥256 px) y se conserva la fuente original
   cuando es estándar de Windows (Arial, Calibri…).
 

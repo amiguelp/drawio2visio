@@ -406,6 +406,20 @@ for k, o in enumerate(dump):
         d['image'] = o['raster']
         if o.get('rkind') == 'img':
             lines = []
+    # Forma «label» de draw.io (tarjeta con icono y texto): draw.io pinta el icono dentro
+    # de la tarjeta según imageAlign/imageVerticalAlign/imageWidth/imageHeight. Se separa
+    # en tarjeta (con su texto) + icono aparte, agrupados; si no, el icono ocupaba toda
+    # la tarjeta y tapaba el texto.
+    label_img = None
+    if 'image' in d and ('label' in d or d.get('shape') == 'label') and not o.get('raster'):
+        iw = float(d.get('imageWidth', '24')); ih = float(d.get('imageHeight', '24'))
+        spc = float(d.get('spacing', '2')) + 5          # mxLabel: spacing + 5
+        ia = d.get('imageAlign', 'left'); iva = d.get('imageVerticalAlign', 'middle')
+        ix = b[0] + (b[2] - iw) / 2 if ia == 'center' else (b[0] + b[2] - iw - spc if ia == 'right' else b[0] + spc)
+        iy = b[1] + (b[3] - ih) / 2 if iva == 'middle' else (b[1] + b[3] - ih - spc if iva == 'bottom' else b[1] + spc)
+        label_img = (d['image'], (ix, iy, iw, ih))
+        d = {k: v for k, v in d.items() if k not in ('image', 'imageWidth', 'imageHeight', 'imageAlign',
+                                                     'imageVerticalAlign', 'imageAspect', 'label', 'shape')}
     is_image = 'image' in d or d.get('shape') == 'image'
     tb = o.get('tb')
     outside = bool(tb) and not inside(tb, b)
@@ -423,7 +437,8 @@ for k, o in enumerate(dump):
         keep = {k: v for k, v in d.items() if k not in ('container', 'collapsible', 'fontSource', 'fontFamily', 'html',
                                                         'labelBackgroundColor', 'labelBorderColor', 'labelPosition',
                                                         'verticalLabelPosition', 'whiteSpace', 'expand', 'recursiveResize',
-                                                        'pointerEvents', 'connectable')}
+                                                        'pointerEvents', 'connectable',
+                                                        'shadow')}   # la sombra sale como un borde negro grueso
         # draw.io's implicit defaults ("default" or missing) must be explicit, or the
         # exporter writes black fills
         for k, dv in (('fillColor', '#FFFFFF'), ('strokeColor', '#000000'), ('fontColor', '#000000')):
@@ -441,8 +456,19 @@ for k, o in enumerate(dump):
         if in_text:
             m['runs'] = runs_of(lines)
             m['bold'] = False
+        if label_img:
+            # el texto centrado de las tarjetas suele ir justo de ancho: sin márgenes
+            # laterales Visio no lo parte en dos líneas
+            m['margins'] = (0, 0) + m['margins'][2:]
         emit_vertex('html=0;whiteSpace=wrap;' + style_str(keep) + FONT, in_text, b, m)
+        if label_img:
+            ib = label_img[1]
+            emit_vertex('shape=image;html=1;imageAspect=0;aspect=fixed;image=%s;' % hires_image(label_img[0], ib, None), '', ib,
+                        {'align': 'center', 'valign': 'middle', 'margins': (0, 0, 0, 0), 'bold': False, 'image': True})
+            image_boxes.append(ib)
         if in_text:
+            if label_img:
+                group_from(g0)
             continue
     if layout:
         emit_layout(layout)

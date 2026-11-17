@@ -168,6 +168,17 @@ for sh, m in zip(shapes, meta):
             for k, v in (('FillPattern', 0), ('LinePattern', 0), ('FillForegnd', '#FFFFFF'), ('FillForegndTrans', 1),
                          ('FillBkgndTrans', 1), ('LineColor', '#FFFFFF'), ('LineColorTrans', 1)):
                 sh = set_cell(sh, k, v)
+        if m.get('shadow'):
+            # sombra suave como la de draw.io (desplazada 3 px abajo a la derecha,
+            # negra al 75 % de transparencia y difuminada); la del exportador es un
+            # bloque negro opaco
+            for k, v in (('ShdwPattern', 1), ('ShdwForegnd', '#000000'), ('ShdwForegndTrans', 0.75),
+                         ('ShapeShdwType', 1), ('ShapeShdwOffsetX', repr(3 / PX)), ('ShapeShdwOffsetY', repr(-3 / PX)),
+                         ('ShapeShdwScaleFactor', 1), ('ShapeShdwObliqueAngle', 0), ('ShapeShdwShow', 0)):
+                sh = set_cell(sh, k, v)
+            sh = re.sub(r'<Cell N="ShapeShdwBlur"[^>]*/>', '', sh)
+            sh = set_cell(sh, 'ShapeShdwBlur', 3)
+            sh = sh.replace('<Cell N="ShapeShdwBlur" V="3"/>', '<Cell N="ShapeShdwBlur" V="3" U="PT"/>', 1)
         if m.get('text') and '<Text>' in sh:
             for k, v in (('TxtPinX', w / 2), ('TxtPinY', h / 2), ('TxtWidth', w), ('TxtHeight', h),
                          ('TxtLocPinX', w / 2), ('TxtLocPinY', h / 2)):

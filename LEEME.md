@@ -63,6 +63,10 @@ convertir.bat C:\diagramas                       (todos los .drawio de la carpet
 python convert.py arquitectura.drawio salida.vsdx --page-index 1
 ```
 
+Si el `.vsdx` ya existe no se sobrescribe: se crea `nombre_2.vsdx`,
+`nombre_3.vsdx`… y se avisa. Así no falla aunque el anterior esté abierto en
+Visio. Con `--overwrite` se reemplaza, salvo que esté abierto.
+
 Si el diagrama tiene varias pestañas, se genera **un único `.vsdx` con una
 página de Visio por pestaña**, con el mismo nombre y orden que en draw.io. Si
 prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
@@ -75,6 +79,7 @@ prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
 | `--font "Segoe UI"` | Fuente para los textos cuya fuente no viene con Windows (Helvetica, fuentes web…) |
 | `--page-index N` | Solo esa pestaña (0 = la primera) |
 | `--split` | Un `.vsdx` por pestaña en vez de uno con todas |
+| `--overwrite` | Sobrescribir el `.vsdx` si ya existe (si está abierto en Visio, se guarda con sufijo) |
 | `--no-group` | No agrupar contenedor+cabecera |
 | `--no-glue` | Flechas sin pegar: no cambian nunca, pero no siguen a las formas |
 | `--separate-labels` | Etiquetas como cuadros de texto aparte, agrupados con su forma |

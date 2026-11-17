@@ -12,6 +12,9 @@ Opciones:
   --image-map map.json             sustituir iconos que no se encuentran
   --page-index N                   exportar solo esa página (0 = la primera)
   --split                          un .vsdx por pestaña en vez de uno con todas
+  --overwrite                      sobrescribir el .vsdx si existe (por defecto se crea
+                                   nombre_2.vsdx, nombre_3.vsdx...; si está abierto en
+                                   Visio también se usa un sufijo)
   --no-group                       no agrupar contenedor+cabecera
   --no-glue                        flechas sin pegar a las formas (no se mueven nunca)
   --separate-labels                etiquetas como cuadros de texto aparte (agrupados)
@@ -46,6 +49,7 @@ ap.add_argument('--image-map', default=None)
 ap.add_argument('--page-index', default=None, type=int)
 ap.add_argument('--preview', action='store_true')
 ap.add_argument('--split', action='store_true', help='un .vsdx por pestaña')
+ap.add_argument('--overwrite', action='store_true', help='sobrescribir el .vsdx si ya existe (si está abierto, se usa sufijo)')
 ap.add_argument('--no-glue', action='store_true', help='no pegar las flechas a las formas')
 ap.add_argument('--separate-labels', action='store_true', help='etiquetas como cuadros de texto aparte')
 ap.add_argument('--no-group', action='store_true', help='no agrupar icono+nombre ni contenedor+cabecera')
@@ -82,6 +86,34 @@ def run(cmd, quiet=False, **kw):
             if a.verbose or line.startswith('AVISO') or line.startswith('página'):
                 print('   ' + line)
     return r
+
+
+def in_use(path):
+    """True if the file cannot be replaced now (e.g. open in Visio on Windows)."""
+    try:
+        with open(path, 'r+b'):
+            pass
+        return False
+    except OSError:
+        return True
+
+
+def free_name(path, taken=()):
+    """Output path that does not clobber an existing file: nombre.vsdx, nombre_2.vsdx...
+    With --overwrite an existing file is replaced, unless it is in use."""
+    path = os.path.abspath(path)
+    if path not in taken and (not os.path.exists(path) or (a.overwrite and not in_use(path))):
+        return path
+    base, ext = os.path.splitext(path)
+    n = 2
+    while True:
+        cand = '%s_%d%s' % (base, n, ext)
+        if cand not in taken and not os.path.exists(cand):
+            if os.path.exists(path):
+                why = 'está abierto o bloqueado' if a.overwrite else 'ya existe'
+                print('   %s %s: se guarda como %s' % (os.path.basename(path), why, os.path.basename(cand)))
+            return cand
+        n += 1
 
 
 def page_names(path):
@@ -189,6 +221,8 @@ for f in files:
     multi = len(names) > 1
     combine = multi and len(idxs) > 1 and not a.split
     target = single or os.path.join(outdir, stem + '.vsdx')
+    if not multi or combine or (single and len(idxs) == 1):
+        target = free_name(target, ok)
     parts = []
     for i in idxs:
         pname = names[i] if i < len(names) and names[i] else 'Página %d' % (i + 1)
@@ -196,7 +230,7 @@ for f in files:
         if combine:
             dst = os.path.join(pdir, 'pagina.vsdx')
         elif multi and not (single and len(idxs) == 1):
-            dst = os.path.join(outdir, '%s_%s.vsdx' % (stem, safe(pname)))
+            dst = free_name(os.path.join(outdir, '%s_%s.vsdx' % (stem, safe(pname))), ok)
         else:
             dst = target
         prev = os.path.join(outdir, '%s_%s_preview.png' % (stem, safe(pname))) if multi else None

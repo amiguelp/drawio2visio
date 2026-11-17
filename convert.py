@@ -17,6 +17,7 @@ Opciones:
   --separate-labels                etiquetas como cuadros de texto aparte (agrupados)
   --preview                        genera un PNG de comprobación (requiere LibreOffice)
   --workdir DIR                    conservar ficheros intermedios
+  --no-update-check                no comprobar si hay versión nueva en GitHub
 
 Si el .drawio tiene varias pestañas, se genera UN solo .vsdx con una página de
 Visio por pestaña (con el mismo nombre). Con --split, un .vsdx por pestaña.
@@ -50,7 +51,18 @@ ap.add_argument('--separate-labels', action='store_true', help='etiquetas como c
 ap.add_argument('--no-group', action='store_true', help='no agrupar icono+nombre ni contenedor+cabecera')
 ap.add_argument('--workdir', default=None)
 ap.add_argument('--verbose', '-v', action='store_true')
+ap.add_argument('--no-update-check', action='store_true', help='no comprobar si hay versión nueva en GitHub')
 a = ap.parse_args()
+
+# ---------------------------------------------------------------- versión nueva en GitHub
+if not a.no_update_check and not os.environ.get('DRAWIO2VISIO_NO_UPDATE'):
+    try:
+        rc = subprocess.run([sys.executable, os.path.join(HERE, 'update_check.py')]).returncode
+    except Exception:
+        rc = 0
+    if rc == 10:   # actualizado: se vuelve a lanzar con el código nuevo
+        sys.stdout.flush()
+        sys.exit(subprocess.run([sys.executable, os.path.abspath(__file__)] + sys.argv[1:] + ['--no-update-check']).returncode)
 
 ENV = dict(os.environ, PYTHONIOENCODING='utf-8')
 

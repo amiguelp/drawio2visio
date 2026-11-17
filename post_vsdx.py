@@ -92,9 +92,13 @@ def rich_text(sh, runs, ha, text_trans=0):
         for rn in ln['segs']:
             r = row0.replace('<Row IX="0">', '<Row IX="%d">' % n, 1)
             r = re.sub(r'<Cell N="Color" V="[^"]*"/>', '<Cell N="Color" V="%s"/>' % rn['color'], r)
-            r = re.sub(r'<Cell N="Size" V="[^"]*"/>', '<Cell N="Size" V="%r"/>' % (0.97 * rn['size'] / PX), r)
+            r = re.sub(r'<Cell N="Size" V="[^"]*"/>', '<Cell N="Size" V="%r"/>' % (rn['size'] / PX), r)
             style = (1 if rn.get('bold') else 0) | (2 if rn.get('italic') else 0) | (4 if rn.get('underline') else 0)
             r = re.sub(r'<Cell N="Style" V="[^"]*"/>', '<Cell N="Style" V="%d"/>' % style, r)
+            if rn.get('font'):
+                f = html.escape(rn['font'], True)
+                r = re.sub(r'<Cell N="Font" V="[^"]*"(?: F="[^"]*")?/>', lambda _m: '<Cell N="Font" V="%s"/>' % f, r) \
+                    if '<Cell N="Font"' in r else r.replace('</Row>', '<Cell N="Font" V="%s"/></Row>' % f)
             r = re.sub(r'<Cell N="ColorTrans" V="[^"]*"/>', '', r)
             if text_trans:
                 r = r.replace('</Row>', '<Cell N="ColorTrans" V="%r"/></Row>' % text_trans)

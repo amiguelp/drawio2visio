@@ -12,7 +12,9 @@ de forma que en Visio:
   texto del icono, colocado debajo como en draw.io), así que se mueven con
   ella y se editan haciendo doble clic en la forma;
 - cada contenedor va agrupado con su cabecera;
-- los iconos SVG salen nítidos (≥256 px) y la fuente es Segoe UI.
+- las tablas HTML dentro de una etiqueta se reconstruyen con formas de Visio;
+- los iconos SVG salen nítidos (≥256 px) y se conserva la fuente original
+  cuando es estándar de Windows (Arial, Calibri…).
 
 ## Requisitos (una sola vez)
 
@@ -53,7 +55,7 @@ prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
 |---|---|
 | `--page A4\|A3\|Letter\|fit` | Tamaño de página (A4 por defecto; `fit` = ajustada al contenido) |
 | `--orientation auto\|portrait\|landscape` | `auto` elige según la forma del diagrama |
-| `--font "Segoe UI"` | Fuente de destino |
+| `--font "Segoe UI"` | Fuente para los textos cuya fuente no viene con Windows (Helvetica, fuentes web…) |
 | `--page-index N` | Solo esa pestaña (0 = la primera) |
 | `--split` | Un `.vsdx` por pestaña en vez de uno con todas |
 | `--no-group` | No agrupar contenedor+cabecera |
@@ -68,7 +70,8 @@ prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
 | Problema al exportar desde draw.io | Qué hace el script |
 |---|---|
 | Formas que no cambian de tamaño en Visio: la geometría se escribe con números fijos | Pone fórmulas relativas (`Width*…`, `Height*…`) en geometría, imágenes y bloque de texto |
-| Textos desplazados: bloques de texto con desfases y sustitución de fuente | Bloque de texto = la forma exacta, alineación y márgenes explícitos, fuente Segoe UI |
+| Textos desplazados: bloques de texto con desfases y sustitución de fuente | Bloque de texto = la forma exacta, alineación y márgenes explícitos. Se mantienen las fuentes estándar de Windows y el tamaño exacto (el exportador lo reducía un 3 %); las demás pasan a `--font` |
+| Tablas HTML dentro de una etiqueta (Visio no admite tablas en un texto): todo el texto salía en una línea | Se miden tal como las maqueta draw.io y se rehacen con un cuadro de texto por celda, los fondos de fila/celda y las líneas de borde, agrupados con su cuadro. Los saltos de línea de cada celda son los de draw.io |
 | Nombres de iconos metidos dentro del icono y partidos en líneas | Un cuadro de texto por etiqueta, en la posición que tenía en draw.io y agrupado con el icono. Si la etiqueta tiene varias líneas con estilos distintos (título + subtítulo gris), van en el mismo cuadro, cada línea con su tamaño, color y negrita |
 | Visio re-enruta las flechas al abrir o se descuelgan | Flechas con los puntos exactos de draw.io, pegadas a un punto de conexión creado justo donde llegan. Visio conserva el trazado hasta que mueves una de sus formas |
 | Cabeceras de contenedores perdidas, hijos descolocados | Contenedor = cuerpo + cabecera en coordenadas absolutas |

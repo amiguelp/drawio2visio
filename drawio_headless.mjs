@@ -156,6 +156,7 @@ if (mode === 'dump') {
     const hex = (c) => { const m = (c || '').match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/); return m ? '#' + [m[1], m[2], m[3]].map(x => (+x | 0).toString(16).padStart(2, '0')).join('').toUpperCase() : null; };
     const fmt = (el) => { const cs = getComputedStyle(el); const fw = cs.fontWeight;
       return { color: hex(cs.color) || hex(cs.fill) || '#000000', size: parseFloat(cs.fontSize) || 12,
+               font: (cs.fontFamily || '').split(',')[0].replace(/["']/g, '').trim(),
                bold: fw === 'bold' || fw === 'bolder' || parseInt(fw) >= 600, italic: cs.fontStyle === 'italic',
                underline: (cs.textDecorationLine || cs.textDecoration || '').indexOf('underline') >= 0 }; };
     const BLOCK = /^(DIV|P|LI|UL|OL|H[1-6]|TABLE|TR|BLOCKQUOTE|PRE)$/;
@@ -191,6 +192,101 @@ if (mode === 'dump') {
                        .filter(l => l.length);
       return out.length ? out : null;
     };
+    // HTML tables in labels: Visio text cannot hold a table, so the table is measured as
+    // laid out by the browser (cell boxes, text, row/cell backgrounds, borders) and rebuilt
+    // in Visio with one text box per cell plus lines and fills.
+    const svgEl = g.view.getDrawPane().ownerSVGElement;
+    const toModel = (r) => { const sr = svgEl.getBoundingClientRect(); const [x, y] = abs(r.left - sr.left, r.top - sr.top); return [x, y, r.width / s, r.height / s]; };
+    // visual=true: also break where the browser wrapped the text, so the lines are
+    // exactly draw.io's whatever font metrics the viewer uses
+    const linesOf = (nodes, visual) => {
+      const lines = [[]];
+      let lastTop = null;
+      const nl = () => { if (lines[lines.length - 1].length) lines.push([]); };
+      const push = (t, el) => { t = t.replace(/\s+/g, ' '); if (t.trim() || (t && lines[lines.length - 1].length)) lines[lines.length - 1].push(Object.assign({ text: t }, fmt(el))); };
+      const walkT = (n) => {
+        if (n.nodeType === 3) {
+          if (!visual) { push(n.textContent, n.parentElement); return; }
+          const t = n.textContent, re = /\S+\s*/g; let m, buf = (t.match(/^\s*/) || [''])[0];
+          while ((m = re.exec(t))) {
+            const rg = document.createRange(); rg.setStart(n, m.index); rg.setEnd(n, m.index + Math.max(1, m[0].trimEnd().length));
+            const rc = rg.getClientRects()[0];
+            if (rc) {
+              if (lastTop !== null && rc.top > lastTop + rc.height * 0.5) { if (buf) push(buf, n.parentElement); buf = ''; lines.push([]); }
+              lastTop = rc.top;
+            }
+            buf += m[0];
+          }
+          if (buf) push(buf, n.parentElement);
+          return;
+        }
+        if (n.nodeType !== 1) return;
+        if (n.tagName === 'BR') { lines.push([]); return; }
+        if (getComputedStyle(n).display === 'none') return;
+        const blk = BLOCK.test(n.tagName);
+        if (blk) nl();
+        for (const c of n.childNodes) walkT(c);
+        if (blk) nl();
+      };
+      for (const n of nodes) walkT(n);
+      const out = lines.map(l => { if (l.length) { l[0].text = l[0].text.replace(/^ +/, ''); l[l.length - 1].text = l[l.length - 1].text.replace(/ +$/, ''); } return l.filter(r => r.text); }).filter(l => l.length);
+      return out.length ? out : null;
+    };
+    const bgOf = (el) => { const c = getComputedStyle(el).backgroundColor; const m = (c || '').match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?/); return (m && (m[4] === undefined || +m[4] > 0.05)) ? hex(c) : null; };
+    // CSS px -> screen px for an element (the label may be scaled by the view and by draw.io)
+    const kOf = (el) => (el.offsetWidth ? el.getBoundingClientRect().width / el.offsetWidth : s);
+    const contentBox = (el) => { const cs = getComputedStyle(el), r = el.getBoundingClientRect(), k = kOf(el);
+      const L = k * (parseFloat(cs.paddingLeft) + parseFloat(cs.borderLeftWidth)), R = k * (parseFloat(cs.paddingRight) + parseFloat(cs.borderRightWidth));
+      const T = k * (parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth)), B = k * (parseFloat(cs.paddingBottom) + parseFloat(cs.borderBottomWidth));
+      return { left: r.left + L, top: r.top + T, width: Math.max(1, r.width - L - R), height: Math.max(1, r.height - T - B) }; };
+    const tableLayout = (st) => {
+      const tn = st.text && st.text.node; const fo = tn && tn.querySelector('foreignObject');
+      if (!fo || !fo.querySelector('table')) return null;
+      let root = fo.querySelector('div');
+      while (root && root.childNodes.length === 1 && root.firstElementChild && root.firstElementChild.tagName === 'DIV') root = root.firstElementChild;
+      const lay = { blocks: [], fills: [], rules: [] };
+      const addBlock = (nodes, box, align) => { const ln = linesOf(nodes, true); if (ln) lay.blocks.push({ b: toModel(box), runs: ln, align, exact: true }); };
+      const alignOf = (el) => { const a = getComputedStyle(el).textAlign; return a === 'center' ? 'center' : (a === 'right' || a === 'end') ? 'right' : 'left'; };
+      const borders = (el) => {
+        const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+        for (const [side, a, b] of [['Top', [r.left, r.top], [r.right, r.top]], ['Bottom', [r.left, r.bottom], [r.right, r.bottom]],
+                                    ['Left', [r.left, r.top], [r.left, r.bottom]], ['Right', [r.right, r.top], [r.right, r.bottom]]]) {
+          const w = parseFloat(cs['border' + side + 'Width']), sty = cs['border' + side + 'Style'];
+          if (w > 0 && sty !== 'none' && sty !== 'hidden') {
+            const p = toModel({ left: a[0], top: a[1], width: b[0] - a[0], height: b[1] - a[1] });
+            lay.rules.push({ p: [[p[0], p[1]], [p[0] + p[2], p[1] + p[3]]], color: hex(cs['border' + side + 'Color']) || '#000000', w: w * kOf(el) / s, dashed: sty === 'dashed' || sty === 'dotted' });
+          }
+        }
+      };
+      const doTable = (tb) => {
+        const tbg = bgOf(tb); if (tbg) lay.fills.push({ b: toModel(tb.getBoundingClientRect()), color: tbg });
+        for (const tr of tb.querySelectorAll('tr')) {
+          const rbg = bgOf(tr); if (rbg) lay.fills.push({ b: toModel(tr.getBoundingClientRect()), color: rbg });
+          for (const td of tr.children) {
+            const cbg = bgOf(td); if (cbg) lay.fills.push({ b: toModel(td.getBoundingClientRect()), color: cbg });
+            borders(td);
+            addBlock(Array.from(td.childNodes), contentBox(td), alignOf(td));
+          }
+        }
+      };
+      // content outside the tables: each run of consecutive non-table nodes is one block
+      let pending = [];
+      const flush = () => {
+        if (!pending.length) return;
+        const rg = document.createRange(); rg.setStartBefore(pending[0]); rg.setEndAfter(pending[pending.length - 1]);
+        const r = rg.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) addBlock(pending, r, alignOf(pending[0].nodeType === 1 ? pending[0] : pending[0].parentElement));
+        pending = [];
+      };
+      for (const c of Array.from(root.childNodes)) {
+        if (c.nodeType === 1 && (c.tagName === 'TABLE' || c.querySelector('table'))) {
+          flush();
+          if (c.tagName === 'TABLE') doTable(c); else for (const t of c.querySelectorAll('table')) doTable(t);
+        } else pending.push(c);
+      }
+      flush();
+      return lay;
+    };
     const walk = (cell) => {
       for (let i = 0; i < m.getChildCount(cell); i++) {
         const c = m.getChildAt(cell, i);
@@ -204,6 +300,7 @@ if (mode === 'dump') {
             if (vt) o.target = vt.id;
           }
           else { const [x, y] = abs(st.x, st.y); o.b = [x, y, st.width / s, st.height / s]; }
+          try { const lay = tableLayout(st); if (lay) o.layout = lay; } catch (e) { o.rerr = 'tabla: ' + String(e).slice(0, 100); }
           try { const r = textRuns(st); if (r) o.runs = r; } catch (e) {}
           if (st.text && st.text.boundingBox) {
             const bb = st.text.boundingBox; const [x, y] = abs(bb.x, bb.y);

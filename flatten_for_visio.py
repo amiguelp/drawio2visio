@@ -106,6 +106,16 @@ def parse_label(value, d):
                           'bold': (base['bold'] or bool(bold)) and not notbold})
     return lines
 
+# fonts present in every Windows install: kept as they are (Visio renders them with the
+# same metrics as draw.io); anything else becomes --font so Visio does not substitute it
+WIN_FONTS = {f.lower() for f in ('Arial', 'Arial Black', 'Calibri', 'Calibri Light', 'Cambria', 'Candara', 'Consolas',
+             'Constantia', 'Corbel', 'Courier New', 'Franklin Gothic Medium', 'Gabriola', 'Georgia', 'Impact',
+             'Lucida Console', 'Lucida Sans Unicode', 'Palatino Linotype', 'Segoe UI', 'Segoe UI Light',
+             'Segoe UI Semibold', 'Sitka Text', 'Sylfaen', 'Tahoma', 'Times New Roman', 'Trebuchet MS', 'Verdana')}
+
+def visio_font(f):
+    return f if f and f.lower() in WIN_FONTS else args.font
+
 def label_lines(o, d):
     """Lines of the label with per-run format. Uses what draw.io actually painted
     (dump 'runs': computed colour, weight, size...) and falls back to parsing the value."""
@@ -113,7 +123,7 @@ def label_lines(o, d):
     if runs:
         out = []
         for segs in runs:
-            segs = [dict(r, text=r['text'].replace('\xa0', ' ')) for r in segs]
+            segs = [dict(r, text=r['text'].replace('\xa0', ' '), font=visio_font(r.get('font'))) for r in segs]
             text = ''.join(r['text'] for r in segs).strip()
             if not text:
                 continue
@@ -123,7 +133,7 @@ def label_lines(o, d):
     lines = parse_label(o.get('value', ''), d)
     for l in lines:
         l['segs'] = [{'text': l['text'], 'size': l['size'], 'color': l['color'], 'bold': bool(l['bold']),
-                      'italic': False, 'underline': False}]
+                      'italic': False, 'underline': False, 'font': visio_font(d.get('fontFamily'))}]
     return lines
 
 def bg_of(d, text_cell=False):
@@ -285,6 +295,31 @@ def text_style(align, valign, line, extra=''):
     return ('text;html=0;whiteSpace=wrap;strokeColor=none;fillColor=none;spacing=0;align=%s;verticalAlign=%s;fontSize=%s;fontColor=%s;fontStyle=%d;%s%s'
             % (align, valign, ('%g' % line['size']), line['color'], 1 if line['bold'] else 0, FONT, extra))
 
+def emit_layout(lay):
+    """Rebuild an HTML table label as laid out by the browser: cell/row fills,
+    border lines and one text box per cell (text wraps inside the cell width)."""
+    plain = {'align': 'center', 'valign': 'middle', 'margins': (0, 0, 0, 0), 'bold': False, 'image': False}
+    for f in lay.get('fills', []):
+        emit_vertex('rounded=0;html=0;strokeColor=none;fillColor=%s;' % f['color'], '', f['b'], dict(plain))
+    for ru in lay.get('rules', []):
+        emit_edge('html=1;endArrow=none;startArrow=none;strokeColor=%s;strokeWidth=%s;%s'
+                  % (ru['color'], r(max(0.25, ru['w'])), 'dashed=1;' if ru.get('dashed') else ''), ru['p'])
+    for blk in lay.get('blocks', []):
+        lines = label_lines({'runs': blk['runs']}, {})
+        if not lines:
+            continue
+        x, y, w, h = blk['b']
+        al = blk.get('align', 'left')
+        # exact cell width (+1 % for rounding) so Visio wraps where the browser did;
+        # a little more only when the font had to be replaced
+        same = all(r.get('font', '').lower() in WIN_FONTS for ln in blk['runs'] for r in ln)
+        # lines already broken where draw.io broke them: room so that Visio does not re-wrap
+        k = 0.08 if blk.get('exact') else (0.01 if same else 0.05)
+        box = (x - (w * k / 2 if al == 'center' else (w * k if al == 'right' else 0)), y, w * (1 + k), h)
+        m = {'align': al, 'valign': 'top', 'margins': (0, 0, 0, 0), 'bold': False, 'image': False,
+             'runs': runs_of(lines)}
+        emit_vertex(text_style(al, 'top', lines[0]), '\n'.join(l['text'] for l in lines), box, m)
+
 def emit_text_block(lines, box, align='center', valign='top', extra='', bg=None):
     """A single text box for the whole label. When the lines differ in size,
     colour or weight, post_vsdx writes one paragraph per line with its own
@@ -324,6 +359,9 @@ for k, o in enumerate(dump):
     if 'group' in d and not o['value']:
         continue
     lines = label_lines(o, d)
+    layout = o.get('layout')
+    if layout:
+        lines = []          # the label is rebuilt piece by piece after the shape
 
     # ---- swimlanes / titled containers
     if 'swimlane' in d:
@@ -408,6 +446,10 @@ for k, o in enumerate(dump):
         emit_vertex('html=0;whiteSpace=wrap;' + style_str(keep) + FONT, in_text, b, m)
         if in_text:
             continue
+    if layout:
+        emit_layout(layout)
+        group_from(g0)
+        continue
     if lines:
         box = tb if tb else (b[0], b[1] + b[3] + 2, b[2], sum(l['size'] * 1.3 for l in lines))
         placed = emit_text_block(lines, box, d.get('align', 'center') if not is_image else 'center',

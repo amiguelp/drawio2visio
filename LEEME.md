@@ -32,6 +32,23 @@ conexión.
 > Como alternativa, copia la carpeta `.cache\drawio-vsdx` desde otro equipo
 > donde ya se haya ejecutado.
 
+## Actualizaciones
+
+Si tu copia es un clon de git (`git clone https://github.com/amiguelp/drawio2visio`),
+cada vez que conviertes se comprueba si hay una versión nueva en GitHub. Si la
+hay, se enseñan los cambios y se pregunta si quieres actualizar tu copia; si
+dices que sí, se actualiza (`git pull`) y la conversión sigue con la versión
+nueva.
+
+- Comprobar a mano: `python update_check.py --check`
+- Actualizar sin preguntar: `python update_check.py --yes`
+- Desactivar la comprobación: `--no-update-check` o la variable de entorno
+  `DRAWIO2VISIO_NO_UPDATE=1`.
+- Si has modificado los scripts, no se actualiza solo (para no perder tus
+  cambios): te lo indica y puedes hacer `git stash` y `git pull`.
+- Sin conexión, sin git o en una copia descargada como ZIP, simplemente avisa
+  y convierte con la versión que tienes.
+
 ## Uso
 
 **Arrastrar y soltar**: arrastra uno o varios `.drawio` (o una carpeta) sobre
@@ -123,3 +140,4 @@ prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
 | `flatten_for_visio.py` | Crea la copia «plana» del diagrama pensada para Visio |
 | `post_vsdx.py` | Corrige el .vsdx: textos, tamaños, fórmulas, grupos, conectores y página |
 | `merge_vsdx.py` | Une las páginas en un único .vsdx (también se puede usar suelto) |
+| `update_check.py` | Comprueba si hay versión nueva en GitHub y actualiza la copia local |

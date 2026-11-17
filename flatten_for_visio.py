@@ -438,7 +438,8 @@ for k, o in enumerate(dump):
                                                         'labelBackgroundColor', 'labelBorderColor', 'labelPosition',
                                                         'verticalLabelPosition', 'whiteSpace', 'expand', 'recursiveResize',
                                                         'pointerEvents', 'connectable',
-                                                        'shadow')}   # la sombra sale como un borde negro grueso
+                                                        'shadow')}   # la sombra del exportador sale como un borde negro grueso;
+                                                                    # post_vsdx pone una sombra suave de Visio
         # draw.io's implicit defaults ("default" or missing) must be explicit, or the
         # exporter writes black fills
         for k, dv in (('fillColor', '#FFFFFF'), ('strokeColor', '#000000'), ('fontColor', '#000000')):
@@ -456,6 +457,8 @@ for k, o in enumerate(dump):
         if in_text:
             m['runs'] = runs_of(lines)
             m['bold'] = False
+        if is_on(d, 'shadow'):
+            m['shadow'] = True          # post_vsdx escribe una sombra suave de Visio
         if label_img:
             # el texto centrado de las tarjetas suele ir justo de ancho: sin márgenes
             # laterales Visio no lo parte en dos líneas

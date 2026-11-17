@@ -170,13 +170,16 @@ for sh, m in zip(shapes, meta):
                 sh = set_cell(sh, k, v)
         if m.get('shadow'):
             # sombra como la de draw.io: desplazada 2 px a la derecha y 3 px abajo, del
-            # mismo tamaño que la forma, negra al 75 % de transparencia y sin difuminar
-            # (con difuminado Visio la extiende alrededor de toda la forma). La del
+            # mismo tamaño que la forma, negra al 75 % de transparencia. La del
             # exportador es un bloque negro opaco.
             for k, v in (('ShdwPattern', 1), ('ShdwForegnd', '#000000'), ('ShdwForegndTrans', 0.75),
                          ('ShapeShdwType', 1), ('ShapeShdwOffsetX', repr(2 / PX)), ('ShapeShdwOffsetY', repr(-3 / PX)),
-                         ('ShapeShdwScaleFactor', 1), ('ShapeShdwObliqueAngle', 0), ('ShapeShdwBlur', 0)):
+                         ('ShapeShdwScaleFactor', 1), ('ShapeShdwObliqueAngle', 0)):
                 sh = set_cell(sh, k, v)
+            # difuminado ligero como el de draw.io (~1,5 pt). V va siempre en pulgadas;
+            # U solo indica la unidad que muestra la hoja de formas
+            sh = set_cell(sh, 'ShapeShdwBlur', repr(1.5 / 72))
+            sh = sh.replace('<Cell N="ShapeShdwBlur" V="%r"/>' % (1.5 / 72), '<Cell N="ShapeShdwBlur" V="%r" U="PT"/>' % (1.5 / 72), 1)
         if m.get('text') and '<Text>' in sh:
             for k, v in (('TxtPinX', w / 2), ('TxtPinY', h / 2), ('TxtWidth', w), ('TxtHeight', h),
                          ('TxtLocPinX', w / 2), ('TxtLocPinY', h / 2)):

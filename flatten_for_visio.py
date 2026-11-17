@@ -414,11 +414,9 @@ for k, o in enumerate(dump):
     g0 = len(meta)
     id2idx[o['id']] = g0
     if is_image:
-        bg = None
-        if not any(overlap(b, ob) for ob in image_boxes if ob is not b):
-            behind = [bc for bb, bc in bodies if inside(b, bb, 0)]
-            bg = behind[-1] if behind else '#FFFFFF'
-        img = hires_image(d.get('image', ''), b, bg)
+        # keep the transparency, as in draw.io (Visio honours PNG alpha); filling it with
+        # a guessed background colour left white boxes on coloured containers
+        img = hires_image(d.get('image', ''), b, None)
         emit_vertex('shape=image;html=1;imageAspect=0;aspect=fixed;image=%s;' % img, '', b,
                     {'align': 'center', 'valign': 'middle', 'margins': (0, 0, 0, 0), 'bold': False, 'image': True})
     else:

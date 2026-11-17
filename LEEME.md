@@ -129,8 +129,9 @@ prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
   traslada (Visio solo admite un fondo para todo el texto de la forma).
 - Para comparar, `node drawio_headless.mjs png diagrama.drawio ref.png --page N`
   genera una imagen de la pestaña tal como la pinta draw.io.
-- La vista previa de LibreOffice dibuja a veces un marco fino alrededor de los
-  iconos, y en etiquetas de varias líneas con tildes puede pintar la primera
+- Los iconos conservan su fondo transparente. La vista previa de LibreOffice
+  pinta un recuadro (azul o con marco fino) detrás de ellos; en Visio no
+  aparece. En etiquetas de varias líneas con tildes puede pintar la primera
   letra de la segunda línea con el tamaño de la primera. Son fallos de ese
   visor; en Visio no aparecen.
 

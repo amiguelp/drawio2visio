@@ -21,6 +21,7 @@ Opciones:
   --preview                        genera un PNG de comprobación (requiere LibreOffice)
   --workdir DIR                    conservar ficheros intermedios
   --no-update-check                no comprobar si hay versión nueva en GitHub
+  --version                        mostrar la versión del conversor (fichero VERSION)
 
 Si el .drawio tiene varias pestañas, se genera UN solo .vsdx con una página de
 Visio por pestaña (con el mismo nombre). Con --split, un .vsdx por pestaña.
@@ -39,6 +40,12 @@ import argparse, glob, html, os, re, shutil, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 WIN = os.name == 'nt'
 
+try:
+    with open(os.path.join(HERE, 'VERSION'), encoding='utf-8') as _f:
+        VERSION = _f.read().strip()
+except OSError:
+    VERSION = 'desconocida'
+
 ap = argparse.ArgumentParser(description='draw.io -> Visio (.vsdx) conservando flechas y textos')
 ap.add_argument('input', help='fichero .drawio/.xml o carpeta con varios')
 ap.add_argument('output', nargs='?', help='.vsdx de salida (por defecto, junto al original)')
@@ -56,6 +63,7 @@ ap.add_argument('--no-group', action='store_true', help='no agrupar icono+nombre
 ap.add_argument('--workdir', default=None)
 ap.add_argument('--verbose', '-v', action='store_true')
 ap.add_argument('--no-update-check', action='store_true', help='no comprobar si hay versión nueva en GitHub')
+ap.add_argument('--version', action='version', version='drawio2visio %s' % VERSION)
 a = ap.parse_args()
 
 # ---------------------------------------------------------------- versión nueva en GitHub

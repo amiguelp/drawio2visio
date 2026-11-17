@@ -8,11 +8,16 @@ los enseña y pregunta si quieres actualizar (`git pull --ff-only`).
     python update_check.py            comprobar y preguntar
     python update_check.py --yes      actualizar sin preguntar
     python update_check.py --check    solo decir si hay versión nueva
+    python update_check.py --version  mostrar la versión instalada
+
+La versión es el número del fichero VERSION (formato MAYOR.MENOR.PARCHE, p. ej.
+1.0.1). Se compara el VERSION local con el de GitHub para decir de cuál a cuál se
+actualiza.
 
 Códigos de salida: 0 = sin cambios o no se actualizó, 10 = se ha actualizado,
 1 = error. Nunca impide convertir: si no hay red o git, avisa y sigue.
 """
-import os, shutil, subprocess, sys
+import os, re, shutil, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TIMEOUT = 20  # segundos para hablar con GitHub
@@ -22,6 +27,33 @@ def git(*args, timeout=TIMEOUT):
     r = subprocess.run(['git', '-C', HERE] + list(args), capture_output=True, text=True,
                        encoding='utf-8', errors='replace', timeout=timeout)
     return r.returncode, (r.stdout or '').strip(), (r.stderr or '').strip()
+
+
+def version_text(text):
+    """'1.0.1' from the contents of a VERSION file, or None if it is not X.Y.Z."""
+    text = (text or '').strip()
+    return text if re.fullmatch(r'\d+\.\d+\.\d+', text) else None
+
+
+def local_version():
+    try:
+        with open(os.path.join(HERE, 'VERSION'), encoding='utf-8') as f:
+            return version_text(f.read())
+    except OSError:
+        return None
+
+
+def remote_version(ref):
+    rc, out, _ = git('show', ref + ':VERSION')
+    return version_text(out) if rc == 0 else None
+
+
+def describe(version, ref):
+    """'1.0.1' or, without VERSION file (old copies), the short commit and date."""
+    if version:
+        return version
+    _, out, _ = git('log', '-1', '--format=%h (%cd)', '--date=short', ref)
+    return out
 
 
 def say(msg=''):
@@ -40,6 +72,9 @@ def ask(question):
 def main(argv):
     yes = '--yes' in argv
     check_only = '--check' in argv
+    if '--version' in argv:
+        say(local_version() or 'desconocida (falta el fichero VERSION)')
+        return 0
     if not shutil.which('git'):
         say('(Sin git instalado: no se comprueban actualizaciones.)')
         return 0
@@ -63,7 +98,7 @@ def main(argv):
     _, behind, _ = git('rev-list', '--count', 'HEAD..' + upstream)
     _, ahead, _ = git('rev-list', '--count', upstream + '..HEAD')
     behind, ahead = int(behind or 0), int(ahead or 0)
-    _, here, _ = git('log', '-1', '--format=%h (%cd)', '--date=short')
+    here = describe(local_version(), 'HEAD')
     if behind == 0:
         if check_only:
             say('Versión al día: %s' % here)
@@ -71,9 +106,10 @@ def main(argv):
 
     _, log, _ = git('log', '--format=  · %cd  %s', '--date=short', 'HEAD..' + upstream)
     say('')
-    say('Hay una versión nueva del conversor en GitHub (%d cambio%s):' % (behind, '' if behind == 1 else 's'))
+    there = describe(remote_version(upstream), upstream)
+    say('Hay una versión nueva del conversor en GitHub: %s (tienes la %s). %d cambio%s:'
+        % (there, here, behind, '' if behind == 1 else 's'))
     say(log)
-    say('Tu versión: %s' % here)
     if check_only:
         return 0
     _, dirty, _ = git('status', '--porcelain', '--untracked-files=no')
@@ -95,8 +131,7 @@ def main(argv):
     if rc != 0:
         say('No se pudo actualizar: %s' % (err or out))
         return 1
-    _, now, _ = git('log', '-1', '--format=%h (%cd)', '--date=short')
-    say('Actualizado a %s.\n' % now)
+    say('Actualizado a la versión %s.\n' % describe(local_version(), 'HEAD'))
     return 10
 
 

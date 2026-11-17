@@ -42,6 +42,7 @@ hay, se enseñan los cambios y se pregunta si quieres actualizar tu copia; si
 dices que sí, se actualiza (`git pull`) y la conversión sigue con la versión
 nueva.
 
+- Ver la versión instalada: `python convert.py --version`
 - Comprobar a mano: `python update_check.py --check`
 - Actualizar sin preguntar: `python update_check.py --yes`
 - Desactivar la comprobación: `--no-update-check` o la variable de entorno
@@ -50,6 +51,19 @@ nueva.
   cambios): te lo indica y puedes hacer `git stash` y `git pull`.
 - Sin conexión, sin git o en una copia descargada como ZIP, simplemente avisa
   y convierte con la versión que tienes.
+
+### Números de versión
+
+La versión está en el fichero `VERSION` y tiene el formato `MAYOR.MENOR.PARCHE`
+(por ejemplo `1.0.1`). Al avisar de una actualización se indica de qué versión
+a cuál se pasa: «Hay una versión nueva del conversor en GitHub: 1.0.1 (tienes la
+1.0.0)». Cada cambio que se sube a `main` incrementa el número:
+
+- **PARCHE** (`1.0.0` → `1.0.1`): corrección de un fallo sin cambios de uso.
+- **MENOR** (`1.0.1` → `1.1.0`): algo nuevo que se convierte o una opción nueva.
+  El parche vuelve a 0.
+- **MAYOR** (`1.1.0` → `2.0.0`): cambia la forma de usarlo (opciones que
+  desaparecen o cambian de significado).
 
 ## Uso
 
@@ -149,3 +163,4 @@ prefieres un archivo por pestaña (`arquitectura_NombrePestaña.vsdx`), usa
 | `post_vsdx.py` | Corrige el .vsdx: textos, tamaños, fórmulas, grupos, conectores y página |
 | `merge_vsdx.py` | Une las páginas en un único .vsdx (también se puede usar suelto) |
 | `update_check.py` | Comprueba si hay versión nueva en GitHub y actualiza la copia local |
+| `VERSION` | Número de versión del conversor (MAYOR.MENOR.PARCHE) |
